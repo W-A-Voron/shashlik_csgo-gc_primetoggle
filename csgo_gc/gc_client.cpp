@@ -66,57 +66,12 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 {
     m_isSearching = true;
     SendMatchmakingUpdate();
-    StartMatchmakingTimer(); // запускаем таймер
 }
 
 void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
 {
     m_isSearching = false;
     SendMatchmakingUpdate();
-    CancelMatchmakingTimer(); // отменяем, если поиск остановлен вручную
-}
-
-void ClientGC::StartMatchmakingTimer()
-{
-    CancelMatchmakingTimer(); // отменяем предыдущий, если был
-    
-    m_matchmakingTimerActive = true;
-    m_matchmakingTimer = std::thread([this]() {
-        std::this_thread::sleep_for(std::chrono::seconds(3));
-        if (!m_matchmakingTimerActive)
-            return;
-
-        // Отправляем клиенту сообщение о готовности сервера
-        CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
-        reserve.set_serverid(GameServerCookieId); // или своё уникальное значение
-        reserve.set_direct_udp_ip(0x2D88CD3F);   // 45.136.205.63
-        reserve.set_direct_udp_port(27015);
-        reserve.set_reservationid(12345);        // произвольное число
-        reserve.set_map("de_dust2");
-        reserve.set_server_address("45.136.205.63:27015");
-
-        // Заполняем вложенное сообщение reservation (CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve)
-        auto* reservation = reserve.mutable_reservation();
-        reservation->add_account_ids(AccountId());
-        reservation->set_game_type(0);     // можно указать любой
-        reservation->set_match_id(123456);
-        reservation->set_server_version(1);
-
-        // Отправляем только клиенту (не серверу)
-        SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
-
-        // Останавливаем поиск, так как игра найдена
-        m_isSearching = false;
-        SendMatchmakingUpdate();
-        m_matchmakingTimerActive = false;
-    });
-}
-
-void ClientGC::CancelMatchmakingTimer()
-{
-    m_matchmakingTimerActive = false;
-    if (m_matchmakingTimer.joinable())
-        m_matchmakingTimer.join();
 }
 
 void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
