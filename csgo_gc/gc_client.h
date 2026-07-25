@@ -12,7 +12,7 @@ public:
 
 private:
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
-
+    bool m_isSearching{ false };
     // event handlers
     void HandleMessage(uint32_t type, const void *data, uint32_t size);
     void HandleNetMessage(const void *data, uint32_t size);
@@ -53,7 +53,9 @@ private:
     void SendRankUpdate();
     void OnMatchmakingPing(GCMessageRead &messageRead);
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
-
+    void OnMatchmakingStart(GCMessageRead &messageRead);
+    void OnMatchmakingStop(GCMessageRead &messageRead);
+    void SendMatchmakingUpdate();
     const uint64_t m_steamId;
 
     Inventory m_inventory;
