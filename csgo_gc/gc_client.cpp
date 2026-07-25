@@ -52,13 +52,18 @@ void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
 void ClientGC::SendMatchmakingUpdate()
 {
     CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
-    update.set_matchmaking(m_isSearching ? 1 : 0); // 1 — поиск, 0 — не ищет
+    update.set_matchmaking(m_isSearching ? 1 : 0);
 
     auto* stats = update.mutable_global_stats();
-    stats->set_players_searching(1000);   // нужное число игроков
-    stats->set_search_time_avg(60);      // нужное среднее время (сек)
+    stats->set_players_searching(1000);
+    stats->set_search_time_avg(60);   // keep top-level for fallback
 
-    // Отправляем клиенту (не на игровой сервер)
+    // Add per-game-type statistics (choose the appropriate game_type)
+    auto* detail = stats->add_search_statistics();
+    detail->set_game_type(0); // or whatever game type you're emulating (e.g., 6 for competitive)
+    detail->set_search_time_avg(60);
+    detail->set_players_searching(1000);
+
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
 }
 
@@ -277,6 +282,16 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_global_stats()->set_servers_available(1000);
     message.mutable_global_stats()->set_ongoing_matches(999);
     message.mutable_global_stats()->set_search_time_avg(60);
+
+    auto* stats = message.mutable_global_stats();
+    stats->set_players_searching(1000);
+    stats->set_servers_available(1000);
+    stats->set_search_time_avg(60);
+
+    auto* detail = stats->add_search_statistics();
+    detail->set_game_type(6); // competitive, see below
+    detail->set_search_time_avg(60);
+    detail->set_players_searching(1000);
 
     // don't write search_statistics
 
