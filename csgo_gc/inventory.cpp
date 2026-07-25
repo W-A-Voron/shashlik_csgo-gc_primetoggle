@@ -7,6 +7,7 @@
 #include "random.h"
 #include <filesystem>
 #include <fstream>
+#include <chrono>
 
 constexpr const char *InventoryFilePath = "csgo_gc/inventory.txt";
 
@@ -83,6 +84,8 @@ void Inventory::ToSingleObject(CMsgSOSingleObject &message, SOTypeId type, const
     message.set_type_id(type);
     message.set_object_data(object.SerializeAsString());
 }
+
+static const auto g_InventoryModuleStartTime = std::chrono::steady_clock::now();
 
 uint32_t Inventory::AccountId() const
 {
@@ -1452,6 +1455,15 @@ void Inventory::DestroyItem(ItemMap::iterator iterator, CMsgSOSingleObject &mess
 
 void Inventory::ReloadFromFile()
 {
+    // Don't reload if we're still within the first 10 seconds after startup.
+    // This prevents items from being re‑marked as unacknowledged ("new")
+    // because of initial file‑watch events right after the game loads.
+    auto now = std::chrono::steady_clock::now();
+    if (now - g_InventoryModuleStartTime < std::chrono::seconds(10))
+    {
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Clear current data
@@ -1459,7 +1471,7 @@ void Inventory::ReloadFromFile()
     m_defaultEquips.clear();
     m_lastHighItemId = 0;
 
-    // Re‑read the file using the same logic as the constructor
+    // Re‑read the file
     KeyValue inventoryKey{ "inventory" };
     if (!inventoryKey.ParseFromFile(InventoryFilePath))
         return;
@@ -1474,7 +1486,7 @@ void Inventory::ReloadFromFile()
             CSOEconItem &item = AllocateItem(highItemId);
             ReadItem(itemKey, item);
             
-            // Mark the item as "new" (unacknowledged) so it appears with a glow
+            // Mark as unacknowledged (new)
             const uint32_t unackMask = 1u << 30;
             uint32_t inventory = item.inventory();
             inventory = (inventory & ~unackMask) | InventoryUnacknowledged(UnacknowledgedPurchased);
