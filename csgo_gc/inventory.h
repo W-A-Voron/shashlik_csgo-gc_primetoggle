@@ -152,5 +152,6 @@ private:
     uint32_t m_lastHighItemId{};
     ItemMap m_items;
     std::vector<CSOEconDefaultEquippedDefinitionInstanceClient> m_defaultEquips;
+    std::unordered_set<uint64_t> m_initialItemIds;
     
 };
