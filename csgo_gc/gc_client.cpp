@@ -1016,3 +1016,10 @@ void ClientGC::RemoveItemName(GCMessageRead &messageRead)
         assert(false);
     }
 }
+
+void ClientGC::SendInventoryUpdate()
+{
+    CMsgSOCacheSubscribed message;
+    m_inventory.BuildCacheSubscription(message, GetConfig().Level(), false);
+    SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
+}
