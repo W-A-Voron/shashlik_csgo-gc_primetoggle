@@ -9,7 +9,7 @@ class ClientGC final : public SharedGC
 public:
     ClientGC(uint64_t steamId);
     ~ClientGC();
-
+    void CheckInventoryReload();
 private:
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
     bool m_isSearching{ false };
@@ -66,6 +66,5 @@ private:
 
 
     void SendInventoryUpdate();
-    void CheckInventoryReload();
     void ReloadInventory();
 };
