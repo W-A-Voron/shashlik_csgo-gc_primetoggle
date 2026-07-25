@@ -1471,11 +1471,13 @@ void Inventory::ReloadFromFile()
         for (const KeyValue &itemKey : *itemsKey)
         {
             uint32_t highItemId = FromString<uint32_t>(itemKey.Name());
-            CSOEconItem &item = AllocateItem(highItemId); // updates m_lastHighItemId
+            CSOEconItem &item = AllocateItem(highItemId);
             ReadItem(itemKey, item);
             
+            // Mark the item as "new" (unacknowledged) so it appears with a glow
+            const uint32_t unackMask = 1u << 30;
             uint32_t inventory = item.inventory();
-            inventory = (inventory & ~InventoryUnacknowledged(0)) | InventoryUnacknowledged(UnacknowledgedPurchased);
+            inventory = (inventory & ~unackMask) | InventoryUnacknowledged(UnacknowledgedPurchased);
             item.set_inventory(inventory);
         }
     }
