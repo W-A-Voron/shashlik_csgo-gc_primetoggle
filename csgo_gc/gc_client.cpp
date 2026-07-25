@@ -45,16 +45,35 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
 
 void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
 {
-    // Можно прочитать входящий пинг, но мы просто отправим обновление статуса
+    // Просто отправляем актуальное состояние (в зависимости от флага)
+    SendMatchmakingUpdate();
+}
+
+void ClientGC::SendMatchmakingUpdate()
+{
     CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
-    update.set_matchmaking(1);   // 1 = идёт поиск
+    update.set_matchmaking(m_isSearching ? 1 : 0); // 1 — поиск, 0 — не ищет
 
     auto* stats = update.mutable_global_stats();
-    stats->set_players_searching(1000);   // желаемое число игроков
-    stats->set_search_time_avg(60);      // желаемое среднее время
+    stats->set_players_searching(1000);   // нужное число игроков
+    stats->set_search_time_avg(60);      // нужное среднее время (сек)
 
-    // Отправить клиенту (не игровому серверу)
+    // Отправляем клиенту (не на игровой сервер)
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+}
+
+void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
+{
+    // Можно прочитать CMsgGCCStrike15_v2_MatchmakingStart, если нужно,
+    // но для статуса нам достаточно просто установить флаг
+    m_isSearching = true;
+    SendMatchmakingUpdate(); // моментально обновляем UI
+}
+
+void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
+{
+    m_isSearching = false;
+    SendMatchmakingUpdate(); // моментально сбрасываем UI
 }
 
 void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
@@ -140,6 +159,14 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 
         case k_EMsgGCCStrike15_v2_MatchmakingClient2ServerPing:
             OnMatchmakingPing(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingStart:
+            OnMatchmakingStart(messageRead);
+            break;
+        
+        case k_EMsgGCCStrike15_v2_MatchmakingStop:
+            OnMatchmakingStop(messageRead);
             break;
 
         default:
