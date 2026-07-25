@@ -5,6 +5,8 @@
 #include "gc_const.h"
 #include "keyvalue.h"
 #include "random.h"
+#include <filesystem>
+#include <fstream>
 
 constexpr const char *InventoryFilePath = "csgo_gc/inventory.txt";
 
@@ -1445,4 +1447,45 @@ void Inventory::DestroyItem(ItemMap::iterator iterator, CMsgSOSingleObject &mess
     ToSingleObject(message, item);
 
     m_items.erase(iterator);
+}
+
+void Inventory::ReloadFromFile()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    // Clear current data
+    m_items.clear();
+    m_defaultEquips.clear();
+    m_lastHighItemId = 0;
+
+    // Re‑read the file using the same logic as the constructor
+    KeyValue inventoryKey{ "inventory" };
+    if (!inventoryKey.ParseFromFile(InventoryFilePath))
+        return;
+
+    const KeyValue *itemsKey = inventoryKey.GetSubkey("items");
+    if (itemsKey)
+    {
+        m_items.reserve(itemsKey->SubkeyCount());
+        for (const KeyValue &itemKey : *itemsKey)
+        {
+            uint32_t highItemId = FromString<uint32_t>(itemKey.Name());
+            CSOEconItem &item = AllocateItem(highItemId); // updates m_lastHighItemId
+            ReadItem(itemKey, item);
+        }
+    }
+
+    const KeyValue *defaultEquipsKey = inventoryKey.GetSubkey("default_equips");
+    if (defaultEquipsKey)
+    {
+        m_defaultEquips.reserve(defaultEquipsKey->SubkeyCount());
+        for (const KeyValue &defaultEquipKey : *defaultEquipsKey)
+        {
+            CSOEconDefaultEquippedDefinitionInstanceClient &def = m_defaultEquips.emplace_back();
+            def.set_account_id(AccountId());
+            def.set_item_definition(FromString<uint32_t>(defaultEquipKey.Name()));
+            def.set_class_id(defaultEquipKey.GetNumber<uint32_t>("class_id"));
+            def.set_slot_id(defaultEquipKey.GetNumber<uint32_t>("slot_id"));
+        }
+    }
 }
