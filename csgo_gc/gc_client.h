@@ -46,8 +46,12 @@ private:
     void NameItem(GCMessageRead &messageRead);
     void NameBaseItem(GCMessageRead &messageRead);
     void RemoveItemName(GCMessageRead &messageRead);
-    std::atomic<bool> m_timerActive{ false };
-    std::future<void> m_timerFuture;
+
+    std::thread m_matchmakingTimer;
+    std::atomic<bool> m_matchmakingTimerActive{false};
+    void StartMatchmakingTimer();
+    void CancelMatchmakingTimer();
+
     void BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message);
     void BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
         const CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &matchmakingHello);
