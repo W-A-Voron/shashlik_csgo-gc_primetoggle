@@ -66,4 +66,5 @@ private:
 
 
     void SendInventoryUpdate();
+    void CheckInventoryReload();
 };
