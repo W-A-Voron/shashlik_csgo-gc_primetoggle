@@ -1455,14 +1455,18 @@ void Inventory::DestroyItem(ItemMap::iterator iterator, CMsgSOSingleObject &mess
 
 void Inventory::ReloadFromFile()
 {
-    // Don't reload during the first 10 seconds after startup
     auto now = std::chrono::steady_clock::now();
     if (now - g_InventoryModuleStartTime < std::chrono::seconds(10))
         return;
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    // Clear current data, but keep m_initialItemIds intact
+    // Snapshot the IDs of all items that currently exist in memory
+    std::unordered_set<uint64_t> oldItemIds;
+    for (const auto& pair : m_items)
+        oldItemIds.insert(pair.first);
+
+    // Now safe to clear everything
     m_items.clear();
     m_defaultEquips.clear();
     m_lastHighItemId = 0;
@@ -1472,38 +1476,34 @@ void Inventory::ReloadFromFile()
     if (!inventoryKey.ParseFromFile(InventoryFilePath))
         return;
 
-    const KeyValue *itemsKey = inventoryKey.GetSubkey("items");
+    const KeyValue* itemsKey = inventoryKey.GetSubkey("items");
     if (itemsKey)
     {
         m_items.reserve(itemsKey->SubkeyCount());
-        for (const KeyValue &itemKey : *itemsKey)
+        for (const KeyValue& itemKey : *itemsKey)
         {
             uint32_t highItemId = FromString<uint32_t>(itemKey.Name());
-            CSOEconItem &item = AllocateItem(highItemId);
+            CSOEconItem& item = AllocateItem(highItemId);
             ReadItem(itemKey, item);
 
-            // Mark as "new" only if the item was not present during the initial load
-            if (m_initialItemIds.find(item.id()) == m_initialItemIds.end())
+            // Mark as "new" ONLY if this item wasn't already in memory before the reload
+            if (oldItemIds.find(item.id()) == oldItemIds.end())
             {
                 const uint32_t unackMask = 1u << 30;
                 uint32_t inventory = item.inventory();
                 inventory = (inventory & ~unackMask) | InventoryUnacknowledged(UnacknowledgedPurchased);
                 item.set_inventory(inventory);
-
-                // Remember it so it won't be marked new again
-                m_initialItemIds.insert(item.id());
             }
-            // Items already known keep their inventory flags from the file
         }
     }
 
-    const KeyValue *defaultEquipsKey = inventoryKey.GetSubkey("default_equips");
+    const KeyValue* defaultEquipsKey = inventoryKey.GetSubkey("default_equips");
     if (defaultEquipsKey)
     {
         m_defaultEquips.reserve(defaultEquipsKey->SubkeyCount());
-        for (const KeyValue &defaultEquipKey : *defaultEquipsKey)
+        for (const KeyValue& defaultEquipKey : *defaultEquipsKey)
         {
-            CSOEconDefaultEquippedDefinitionInstanceClient &def = m_defaultEquips.emplace_back();
+            CSOEconDefaultEquippedDefinitionInstanceClient& def = m_defaultEquips.emplace_back();
             def.set_account_id(AccountId());
             def.set_item_definition(FromString<uint32_t>(defaultEquipKey.Name()));
             def.set_class_id(defaultEquipKey.GetNumber<uint32_t>("class_id"));
