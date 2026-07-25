@@ -2,6 +2,7 @@
 #include "gc_client.h"
 #include "graffiti.h"
 #include "keyvalue.h"
+#include <filesystem>
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
@@ -1022,4 +1023,29 @@ void ClientGC::SendInventoryUpdate()
     CMsgSOCacheSubscribed message;
     m_inventory.BuildCacheSubscription(message, GetConfig().Level(), false);
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
+}
+
+
+void ClientGC::CheckInventoryReload()
+{
+    static auto lastWrite = std::filesystem::file_time_type::min();
+    namespace fs = std::filesystem;
+
+    fs::path path = "csgo_gc/inventory.txt";
+    if (!fs::exists(path))
+        return;
+
+    auto currentWrite = fs::last_write_time(path);
+    if (currentWrite != lastWrite)
+    {
+        lastWrite = currentWrite;
+        Platform::Print("Inventory file changed – reloading...\n");
+        ReloadInventory();
+    }
+}
+
+void ClientGC::ReloadInventory()
+{
+    m_inventory.ReloadFromFile();
+    SendInventoryUpdate();
 }
