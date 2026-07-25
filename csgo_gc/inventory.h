@@ -91,7 +91,7 @@ public:
     // returns the item id and adds the item to the provided CMsgSOMultipleObjects
     // on failure returns 0 and does nothing
     uint64_t PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
-
+    void ReloadFromFile();
 private:
     mutable std::mutex m_mutex;
     uint32_t AccountId() const;
