@@ -313,6 +313,7 @@ void Inventory::WriteItem(KeyValue &itemKey, const CSOEconItem &item) const
 
 void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level, bool server)
 {
+    std::lock_guard<std::mutex> lock(m_mutex);
     message.set_version(InventoryVersion);
     message.mutable_owner_soid()->set_type(SoIdTypeSteamId);
     message.mutable_owner_soid()->set_id(m_steamId);
