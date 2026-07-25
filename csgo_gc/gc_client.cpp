@@ -43,6 +43,20 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
     }
 }
 
+void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
+{
+    // Можно прочитать входящий пинг, но мы просто отправим обновление статуса
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+    update.set_matchmaking(1);   // 1 = идёт поиск
+
+    auto* stats = update.mutable_global_stats();
+    stats->set_players_searching(1000);   // желаемое число игроков
+    stats->set_search_time_avg(60);      // желаемое среднее время
+
+    // Отправить клиенту (не игровому серверу)
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+}
+
 void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 {
     GCMessageRead messageRead{ type, data, size };
@@ -122,6 +136,10 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 
         case k_EMsgGCStatTrakSwap:
             StatTrakSwap(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingClient2ServerPing:
+            OnMatchmakingPing(messageRead);
             break;
 
         default:
@@ -228,12 +246,12 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.set_account_id(AccountId());
 
     // this is the state of csgo matchmaking in 2024
-    message.mutable_global_stats()->set_players_online(0);
-    message.mutable_global_stats()->set_servers_online(0);
-    message.mutable_global_stats()->set_players_searching(0);
-    message.mutable_global_stats()->set_servers_available(0);
-    message.mutable_global_stats()->set_ongoing_matches(0);
-    message.mutable_global_stats()->set_search_time_avg(0);
+    message.mutable_global_stats()->set_players_online(10000);
+    message.mutable_global_stats()->set_servers_online(10000);
+    message.mutable_global_stats()->set_players_searching(1000);
+    message.mutable_global_stats()->set_servers_available(1000);
+    message.mutable_global_stats()->set_ongoing_matches(999);
+    message.mutable_global_stats()->set_search_time_avg(60);
 
     // don't write search_statistics
 
