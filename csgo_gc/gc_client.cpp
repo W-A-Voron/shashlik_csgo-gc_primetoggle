@@ -89,11 +89,11 @@ void ClientGC::StartMatchmakingTimer()
         // Отправляем клиенту сообщение о готовности сервера
         CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
         reserve.set_serverid(GameServerCookieId); // или своё уникальное значение
-        reserve.set_direct_udp_ip(0x7F000001);   // 127.0.0.1
+        reserve.set_direct_udp_ip(0x2D88CD3F);   // 45.136.205.63
         reserve.set_direct_udp_port(27015);
         reserve.set_reservationid(12345);        // произвольное число
         reserve.set_map("de_dust2");
-        reserve.set_server_address("127.0.0.1:27015");
+        reserve.set_server_address("45.136.205.63:27015");
 
         // Заполняем вложенное сообщение reservation (CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve)
         auto* reservation = reserve.mutable_reservation();
