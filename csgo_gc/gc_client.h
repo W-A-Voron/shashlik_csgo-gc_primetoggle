@@ -63,4 +63,7 @@ private:
     // microtransactions, we only have one going at a time
     uint64_t m_transactionId{};
     std::vector<uint64_t> m_transactionItemIds;
+
+
+    void SendInventoryUpdate();
 };
