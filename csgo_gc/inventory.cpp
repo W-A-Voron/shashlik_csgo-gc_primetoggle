@@ -1473,6 +1473,10 @@ void Inventory::ReloadFromFile()
             uint32_t highItemId = FromString<uint32_t>(itemKey.Name());
             CSOEconItem &item = AllocateItem(highItemId); // updates m_lastHighItemId
             ReadItem(itemKey, item);
+            
+            uint32_t inventory = item.inventory();
+            inventory = (inventory & ~InventoryUnacknowledged(0)) | InventoryUnacknowledged(UnacknowledgedPurchased);
+            item.set_inventory(inventory);
         }
     }
 
