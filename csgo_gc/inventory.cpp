@@ -1455,18 +1455,14 @@ void Inventory::DestroyItem(ItemMap::iterator iterator, CMsgSOSingleObject &mess
 
 void Inventory::ReloadFromFile()
 {
-    // Don't reload if we're still within the first 10 seconds after startup.
-    // This prevents items from being re‑marked as unacknowledged ("new")
-    // because of initial file‑watch events right after the game loads.
+    // Don't reload during the first 10 seconds after startup
     auto now = std::chrono::steady_clock::now();
     if (now - g_InventoryModuleStartTime < std::chrono::seconds(10))
-    {
         return;
-    }
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    // Clear current data
+    // Clear current data, but keep m_initialItemIds intact
     m_items.clear();
     m_defaultEquips.clear();
     m_lastHighItemId = 0;
@@ -1485,12 +1481,19 @@ void Inventory::ReloadFromFile()
             uint32_t highItemId = FromString<uint32_t>(itemKey.Name());
             CSOEconItem &item = AllocateItem(highItemId);
             ReadItem(itemKey, item);
-            
-            // Mark as unacknowledged (new)
-            const uint32_t unackMask = 1u << 30;
-            uint32_t inventory = item.inventory();
-            inventory = (inventory & ~unackMask) | InventoryUnacknowledged(UnacknowledgedPurchased);
-            item.set_inventory(inventory);
+
+            // Mark as "new" only if the item was not present during the initial load
+            if (m_initialItemIds.find(item.id()) == m_initialItemIds.end())
+            {
+                const uint32_t unackMask = 1u << 30;
+                uint32_t inventory = item.inventory();
+                inventory = (inventory & ~unackMask) | InventoryUnacknowledged(UnacknowledgedPurchased);
+                item.set_inventory(inventory);
+
+                // Remember it so it won't be marked new again
+                m_initialItemIds.insert(item.id());
+            }
+            // Items already known keep their inventory flags from the file
         }
     }
 
