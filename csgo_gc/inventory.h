@@ -93,6 +93,7 @@ public:
     uint64_t PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
 
 private:
+    mutable std::mutex m_mutex;
     uint32_t AccountId() const;
 
     // allocates an empty item, sets id and account_id fields
@@ -151,4 +152,5 @@ private:
     uint32_t m_lastHighItemId{};
     ItemMap m_items;
     std::vector<CSOEconDefaultEquippedDefinitionInstanceClient> m_defaultEquips;
+    
 };
