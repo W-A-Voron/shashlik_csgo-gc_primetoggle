@@ -1897,7 +1897,7 @@ static void Hk_SteamAPI_RunCallbacks()
         s_clientGC->m_networking.Update(&s_clientGC->m_gc);
 
         if (s_clientGC)
-            s_clientGC->m_gc.CheckInventoryReload();
+            s_clientGC->m_gc.CheckFileReloads();
 
         // run client gc callbacks
         uint32_t messageSize;
