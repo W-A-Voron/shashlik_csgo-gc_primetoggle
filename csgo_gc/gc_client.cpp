@@ -172,6 +172,10 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
         case k_EMsgGCCStrike15_v2_MatchmakingStop:
             OnMatchmakingStop(messageRead);
             break;
+        case k_EMsgGCCStrike15_v2_Client2GCEconPreviewDataBlockRequest:
+            OnEconPreviewDataBlockRequest(messageRead);
+            break;
+
 
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled protobuf message %s\n",
@@ -270,6 +274,19 @@ static void BuildCSWelcome(CMsgCStrike15Welcome &message)
     message.set_time_first_played(1329845773);
     message.set_last_time_played(1680260376);
     message.set_last_ip_address(MakeAddress(127, 0, 0, 1));
+}
+
+void ClientGC::OnEconPreviewDataBlockRequest(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_Client2GCEconPreviewDataBlockRequest request;
+    if (!messageRead.ReadProtobuf(request))
+        return;
+
+    // Use request.param_d as defindex, maybe request.param_m as paint index? 
+    // But note: param_m is the item ID, not a paint index, so this doesn't make sense.
+    // You would need to decide how to map the parameters to a new item.
+    // For example, you could create a default item with defindex = request.param_d,
+    // but that would ignore the paint/seed etc.
 }
 
 void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
