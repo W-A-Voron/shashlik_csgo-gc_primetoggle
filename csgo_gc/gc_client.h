@@ -62,7 +62,7 @@ private:
     void OnMatchmakingStop(GCMessageRead &messageRead);
     void SendMatchmakingUpdate();
     const uint64_t m_steamId;
-
+    void ProcessGiftUse(uint64_t giftId);
     Inventory m_inventory;
 
     // microtransactions, we only have one going at a time
