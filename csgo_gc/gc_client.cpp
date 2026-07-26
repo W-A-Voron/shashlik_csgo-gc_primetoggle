@@ -4,6 +4,7 @@
 #include "keyvalue.h"
 #include <filesystem>
 #include "case_opening.h"
+#include <steam/isteamhttp.h>
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
@@ -13,7 +14,7 @@ ClientGC::ClientGC(uint64_t steamId)
     Graffiti::Initialize();
 
     StartThread();
-
+    FetchOverwatchCases();
     Platform::Print("ClientGC spawned for user %llu\n", steamId);
 }
 
@@ -174,6 +175,13 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             OnMatchmakingStop(messageRead);
             break;
 
+        case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseStatus:
+            OnOverwatchCaseStatus(messageRead);
+            break;
+        
+        case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate:
+            OnOverwatchCaseUpdate(messageRead);
+            break;
 
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled protobuf message %s\n",
@@ -1244,3 +1252,215 @@ void ClientGC::ReloadUnusualLootLists()
     Platform::Print("ReloadUnusualLootLists: unusual loot lists reloaded\n");
 }
 
+
+void ClientGC::FetchOverwatchCases()
+{
+    ISteamHTTP* http = SteamHTTP();
+    if (!http)
+    {
+        Platform::Print("Overwatch: SteamHTTP not available\n");
+        return;
+    }
+
+    SteamAPICall_t hCall = http->CreateHTTPRequest(k_EHTTPMethodGET, "https://sasha190409.github.io/csgo/overwatch");
+    if (hCall == k_uAPICallInvalid)
+    {
+        Platform::Print("Overwatch: failed to create HTTP request\n");
+        return;
+    }
+
+    // Set a user-agent to avoid being blocked
+    http->SetHTTPRequestHeaderValue(hCall, "User-Agent", "csgo_gc/1.0");
+
+    // Send the request; the callback will be fired when done
+    http->SendHTTPRequest(hCall);
+}
+void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t* pCallback, bool bIOFailure)
+{
+    if (bIOFailure || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
+    {
+        Platform::Print("Overwatch: HTTP request failed (status %d, iofailure %d)\n",
+                        pCallback->m_eStatusCode, bIOFailure);
+        return;
+    }
+
+    ISteamHTTP* http = SteamHTTP();
+    if (!http) return;
+
+    // Get response body size
+    uint32_t bodySize;
+    if (!http->GetHTTPResponseBodySize(pCallback->m_hRequest, &bodySize) || bodySize == 0)
+    {
+        Platform::Print("Overwatch: empty response\n");
+        return;
+    }
+
+    std::vector<char> body(bodySize + 1, 0);
+    if (!http->GetHTTPResponseBodyData(pCallback->m_hRequest, body.data(), bodySize))
+    {
+        Platform::Print("Overwatch: failed to read response body\n");
+        return;
+    }
+
+    std::string json(body.data());
+    Platform::Print("Overwatch: received JSON: %s\n", json.c_str());
+
+    // Parse JSON: {"case1":"STEAM_0:1:562118442", ...}
+    // Simple manual parser for this specific format.
+    std::vector<uint32_t> suspects;
+    size_t pos = 0;
+    // Find first '{'
+    size_t start = json.find('{');
+    if (start == std::string::npos) return;
+    // Find last '}'
+    size_t end = json.rfind('}');
+    if (end == std::string::npos || end <= start) return;
+    std::string content = json.substr(start + 1, end - start - 1);
+
+    // Split by ','
+    size_t comma = 0;
+    while (comma != std::string::npos)
+    {
+        size_t next = content.find(',', comma);
+        std::string pair = content.substr(comma, (next == std::string::npos) ? std::string::npos : next - comma);
+        // Trim spaces
+        pair.erase(0, pair.find_first_not_of(" \t\n\r"));
+        pair.erase(pair.find_last_not_of(" \t\n\r") + 1);
+        if (pair.empty()) break;
+
+        // Find colon
+        size_t colon = pair.find(':');
+        if (colon == std::string::npos) continue;
+        std::string key = pair.substr(0, colon);
+        std::string value = pair.substr(colon + 1);
+        // Trim quotes
+        auto trimQuotes = [](std::string& s) {
+            if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+                s = s.substr(1, s.size() - 2);
+        };
+        trimQuotes(key);
+        trimQuotes(value);
+        // key is "caseN", value is "STEAM_0:..."
+        if (key.find("case") == 0 && !value.empty())
+        {
+            uint32_t accId = SteamIDStringToAccountId(value);
+            if (accId != 0)
+                suspects.push_back(accId);
+        }
+
+        comma = (next == std::string::npos) ? std::string::npos : next + 1;
+    }
+
+    // Store in member
+    {
+        std::lock_guard<std::mutex> lock(m_overwatchMutex);
+        m_overwatchSuspects = std::move(suspects);
+        m_nextOverwatchIndex = 0;
+        Platform::Print("Overwatch: loaded %zu suspects\n", m_overwatchSuspects.size());
+    }
+}
+uint32_t ClientGC::SteamIDStringToAccountId(const std::string& str)
+{
+    // Format: STEAM_0:X:YYYY
+    // account ID = YYYY * 2 + X
+    unsigned int x, y;
+    if (sscanf(str.c_str(), "STEAM_%*u:%u:%u", &x, &y) != 2)
+        return 0;
+    return y * 2 + x;
+}
+
+void ClientGC::SendOverwatchCaseAssignment(uint32_t suspectAccountId)
+{
+    CMsgGCCStrike15_v2_PlayerOverwatchCaseAssignment assignment;
+    assignment.set_caseid(m_nextCaseId++);
+    assignment.set_suspectid(suspectAccountId);
+    assignment.set_fractionid(0);
+    assignment.set_numrounds(8);
+    assignment.set_fractionrounds(8);
+    assignment.set_streakconvictions(0);
+    assignment.set_reason(0);
+    assignment.set_verdict(0);
+    assignment.set_timestamp(static_cast<uint32_t>(time(nullptr)));
+    assignment.set_throttleseconds(0);
+
+    std::string url = "https://sasha190409.github.io/csgo/demos/imposter_"
+                    + std::to_string(suspectAccountId) + ".dem";
+    assignment.set_caseurl(url);
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayerOverwatchCaseAssignment, assignment);
+
+    Platform::Print("Overwatch: assigned case %llu for suspect %u, URL: %s\n",
+                    assignment.caseid(), suspectAccountId, url.c_str());
+}
+
+void ClientGC::OnOverwatchCaseStatus(GCMessageRead& messageRead)
+{
+    CMsgGCCStrike15_v2_PlayerOverwatchCaseStatus msg;
+    if (!messageRead.ReadProtobuf(msg))
+    {
+        Platform::Print("Failed to parse OverwatchCaseStatus\n");
+        return;
+    }
+
+    if (msg.caseid() == 0)   // client requests a new case
+    {
+        std::lock_guard<std::mutex> lock(m_overwatchMutex);
+        if (m_overwatchSuspects.empty())
+        {
+            Platform::Print("Overwatch: no suspects available\n");
+            return;
+        }
+        uint32_t suspect = m_overwatchSuspects[m_nextOverwatchIndex];
+        m_nextOverwatchIndex = (m_nextOverwatchIndex + 1) % m_overwatchSuspects.size();
+        SendOverwatchCaseAssignment(suspect);
+    }
+    else
+    {
+        Platform::Print("Overwatch: status check for case %llu (status %u)\n",
+                        msg.caseid(), msg.statusid());
+    }
+}
+
+void ClientGC::OnOverwatchCaseUpdate(GCMessageRead& messageRead)
+{
+    CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate msg;
+    if (!messageRead.ReadProtobuf(msg))
+    {
+        Platform::Print("Failed to parse OverwatchCaseUpdate\n");
+        return;
+    }
+
+    Platform::Print("Overwatch: verdict for case %llu, suspect %u, reason %u\n",
+                    msg.caseid(), msg.suspectid(), msg.reason());
+    // No response needed – the GC just logs the verdict
+}
+
+void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate& msg)
+{
+    ISteamHTTP* http = SteamHTTP();
+    if (!http) {
+        Platform::Print("Cloudflare logging: SteamHTTP not available\n");
+        return;
+    }
+
+    // Build JSON payload
+    std::string json = "{";
+    json += "\"caseid\":" + std::to_string(msg.caseid()) + ",";
+    json += "\"suspectid\":" + std::to_string(msg.suspectid()) + ",";
+    json += "\"reason\":" + std::to_string(msg.reason()) + ",";
+    json += "\"verdict\":" + std::to_string(msg.verdict()) + ",";
+    json += "\"timestamp\":" + std::to_string(time(nullptr));
+    json += "}";
+
+    SteamAPICall_t hCall = http->CreateHTTPRequest(k_EHTTPMethodPOST, "https://your-worker.workers.dev/verdict");
+    if (hCall == k_uAPICallInvalid) {
+        Platform::Print("Cloudflare logging: failed to create HTTP request\n");
+        return;
+    }
+
+    http->SetHTTPRequestHeaderValue(hCall, "Content-Type", "application/json");
+    http->SetHTTPRequestRawPostBody(hCall, "application/json", (const uint8_t*)json.data(), (uint32_t)json.size());
+
+    // Send asynchronously; we don't need to handle response
+    http->SendHTTPRequest(hCall);
+}
