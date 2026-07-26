@@ -226,11 +226,11 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
 
     // Determine number of recipients (items to give)
     int numItems = 1;
-    if (defIndex == Gift1Player)          // global constant from gc_const_csgo.h
+    if (defIndex == ::Gift1Player)
         numItems = 1;
-    else if (defIndex == Gift9Players)    // global constant
+    else if (defIndex == ::Gift9Players)
         numItems = 9;
-    else if (defIndex == Gift25Spectators)// global constant
+    else if (defIndex == ::Gift25Spectators)
         numItems = 25;
     else {
         Platform::Print("Unknown gift type\n");
