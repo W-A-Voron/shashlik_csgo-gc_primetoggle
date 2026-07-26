@@ -102,3 +102,9 @@ float GCConfig::GetRarityWeight(uint32_t rarity) const
 
     return 0;
 }
+
+GCConfig &GetConfig()
+{
+    static GCConfig config;
+    return config;
+}
