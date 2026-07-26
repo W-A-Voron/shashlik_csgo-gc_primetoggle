@@ -4,11 +4,13 @@
 #include "keyvalue.h"
 #include <filesystem>
 #include "case_opening.h"
-#include <steam/isteamhttp.h>
+#include <steam/steam_api.h>          // for HTTPRequestCompleted_t, CCallback
+#include <steam/isteamhttp.h>         // for ISteamHTTP
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
     , m_inventory{ steamId }
+    , m_httpCallback(this, &ClientGC::OnOverwatchHTTPResponse)
 {
     // also called from ServerGC's constructor
     Graffiti::Initialize();
@@ -1255,27 +1257,21 @@ void ClientGC::ReloadUnusualLootLists()
 
 void ClientGC::FetchOverwatchCases()
 {
-    ISteamHTTP* http = SteamHTTP();
-    if (!http)
-    {
-        Platform::Print("Overwatch: SteamHTTP not available\n");
-        return;
-    }
+    ISteamHTTP *http = SteamHTTP();
+    if (!http) return;
 
-    SteamAPICall_t hCall = http->CreateHTTPRequest(k_EHTTPMethodGET, "https://sasha190409.github.io/csgo/overwatch");
-    if (hCall == k_uAPICallInvalid)
-    {
-        Platform::Print("Overwatch: failed to create HTTP request\n");
-        return;
-    }
+    HTTPRequestHandle hRequest = http->CreateHTTPRequest(k_EHTTPMethodGET, "https://sasha190409.github.io/csgo/overwatch");
+    if (hRequest == k_uAPICallInvalid) return;
 
-    // Set a user-agent to avoid being blocked
-    http->SetHTTPRequestHeaderValue(hCall, "User-Agent", "csgo_gc/1.0");
+    http->SetHTTPRequestHeaderValue(hRequest, "User-Agent", "csgo_gc/1.0");
 
-    // Send the request; the callback will be fired when done
-    http->SendHTTPRequest(hCall);
+    // Send the request – the callback will be triggered via m_httpCallback
+    SteamAPICall_t hCall;
+    if (!http->SendHTTPRequest(hRequest, &hCall))
+        Platform::Print("Overwatch: failed to send request\n");
+    // No need to store hCall; the callback system handles it.
 }
-void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t* pCallback, bool bIOFailure)
+void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback, bool bIOFailure)
 {
     if (bIOFailure || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
     {
@@ -1284,26 +1280,20 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t* pCallback, bool b
         return;
     }
 
-    ISteamHTTP* http = SteamHTTP();
+    ISteamHTTP *http = SteamHTTP();
     if (!http) return;
 
-    // Get response body size
     uint32_t bodySize;
     if (!http->GetHTTPResponseBodySize(pCallback->m_hRequest, &bodySize) || bodySize == 0)
-    {
-        Platform::Print("Overwatch: empty response\n");
         return;
-    }
 
-    std::vector<char> body(bodySize + 1, 0);
+    std::vector<uint8_t> body(bodySize + 1, 0);  // use uint8_t
     if (!http->GetHTTPResponseBodyData(pCallback->m_hRequest, body.data(), bodySize))
-    {
-        Platform::Print("Overwatch: failed to read response body\n");
         return;
-    }
 
-    std::string json(body.data());
+    std::string json(reinterpret_cast<char*>(body.data()), bodySize);
     Platform::Print("Overwatch: received JSON: %s\n", json.c_str());
+
 
     // Parse JSON: {"case1":"STEAM_0:1:562118442", ...}
     // Simple manual parser for this specific format.
@@ -1359,10 +1349,8 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t* pCallback, bool b
         Platform::Print("Overwatch: loaded %zu suspects\n", m_overwatchSuspects.size());
     }
 }
-uint32_t ClientGC::SteamIDStringToAccountId(const std::string& str)
+uint32_t ClientGC::SteamIDStringToAccountId(const std::string &str)
 {
-    // Format: STEAM_0:X:YYYY
-    // account ID = YYYY * 2 + X
     unsigned int x, y;
     if (sscanf(str.c_str(), "STEAM_%*u:%u:%u", &x, &y) != 2)
         return 0;
@@ -1436,32 +1424,28 @@ void ClientGC::OnOverwatchCaseUpdate(GCMessageRead& messageRead)
     SendVerdictToCloudflare(msg);
 }
 
-void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate& msg)
+void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate &msg)
 {
-    ISteamHTTP* http = SteamHTTP();
-    if (!http) {
-        Platform::Print("Cloudflare logging: SteamHTTP not available\n");
-        return;
-    }
+    ISteamHTTP *http = SteamHTTP();
+    if (!http) return;
 
-    // Build JSON payload
-    std::string json = "{";
-    json += "\"caseid\":" + std::to_string(msg.caseid()) + ",";
-    json += "\"suspectid\":" + std::to_string(msg.suspectid()) + ",";
-    json += "\"reason\":" + std::to_string(msg.reason()) + ",";
-    json += "\"verdict\":" + std::to_string(msg.verdict()) + ",";
-    json += "\"timestamp\":" + std::to_string(time(nullptr));
-    json += "}";
+    std::string json = "{"
+        "\"caseid\":" + std::to_string(msg.caseid()) + ","
+        "\"suspectid\":" + std::to_string(msg.suspectid()) + ","
+        "\"reason\":" + std::to_string(msg.reason()) + ","
+        "\"verdict\":" + std::to_string(msg.verdict()) + ","
+        "\"timestamp\":" + std::to_string(time(nullptr)) +
+    "}";
 
-    SteamAPICall_t hCall = http->CreateHTTPRequest(k_EHTTPMethodPOST, "https://your-worker.workers.dev/verdict");
-    if (hCall == k_uAPICallInvalid) {
-        Platform::Print("Cloudflare logging: failed to create HTTP request\n");
-        return;
-    }
+    HTTPRequestHandle hRequest = http->CreateHTTPRequest(k_EHTTPMethodPOST, "https://your-worker.workers.dev/verdict");
+    if (hRequest == k_uAPICallInvalid) return;
 
-    http->SetHTTPRequestHeaderValue(hCall, "Content-Type", "application/json");
-    http->SetHTTPRequestRawPostBody(hCall, "application/json", (const uint8_t*)json.data(), (uint32_t)json.size());
+    http->SetHTTPRequestHeaderValue(hRequest, "Content-Type", "application/json");
 
-    // Send asynchronously; we don't need to handle response
-    http->SendHTTPRequest(hCall);
+    // Convert to non-const uint8_t*
+    std::vector<uint8_t> postData(json.begin(), json.end());
+    http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
+
+    // Send asynchronously – we ignore the callback
+    http->SendHTTPRequest(hRequest, nullptr);  // or &someCall if you care
 }
