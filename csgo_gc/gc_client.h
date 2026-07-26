@@ -90,4 +90,5 @@ private:
 
     // Helper: parse "STEAM_0:X:YYYY" -> account ID
     static uint32_t SteamIDStringToAccountId(const std::string& str);
+    void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate& msg);
 };
