@@ -3,6 +3,7 @@
 #include "graffiti.h"
 #include "keyvalue.h"
 #include <filesystem>
+#include "case_opening.h"
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
