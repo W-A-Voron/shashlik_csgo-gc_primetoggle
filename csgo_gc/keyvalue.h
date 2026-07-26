@@ -50,11 +50,12 @@ public:
     // range based for loops for subkeys
     const KeyValue *begin() const { return m_subkeys.data(); }
     const KeyValue *end() const { return m_subkeys.data() + m_subkeys.size(); }
-
     // parsing helpers
     const KeyValue *GetSubkey(std::string_view name) const;
     std::string_view GetString(std::string_view name, std::string_view fallback = {}) const;
-
+    KeyValue() : m_name{} {}
+    bool IsEmpty() const;
+    void Clear();
     // writing helpers
     KeyValue &AddSubkey(std::string_view name);
     void AddString(std::string_view name, std::string_view value);
@@ -86,7 +87,7 @@ public:
         KeyValue &subkey = AddSubkey(name);
         subkey.m_string = std::to_string(value);
     }
-
+    
 private:
     bool Parse(KeyValueParser &parser);
     KeyValue *FindOrCreateSubkey(std::string_view name);
