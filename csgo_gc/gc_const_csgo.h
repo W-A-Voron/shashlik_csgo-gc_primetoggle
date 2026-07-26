@@ -21,6 +21,18 @@ enum RankType : uint32_t
     RankTypeDangerZone = 10
 };
 
+enum ItemDefIndex
+{
+    Gift1Player = 1210,
+    Gift9Players = 1211,
+    Gift25Spectators = 1215,
+};
+
+enum EGCItemCustomizationNotification
+{
+    k_EGCItemCustomizationNotification_Gift = 15, // guessed; adjust if known
+};
+
 enum RankId : uint32_t
 {
     RankNone,
