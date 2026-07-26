@@ -11,6 +11,11 @@ public:
     ClientGC(uint64_t steamId);
     ~ClientGC();
     void CheckFileReloads();
+    void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback, bool bIOFailure);
+    void OnOverwatchCaseStatus(GCMessageRead &messageRead);
+    void OnOverwatchCaseUpdate(GCMessageRead &messageRead);
+    void SendOverwatchCaseAssignment(uint32_t suspectAccountId);
+    void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate &msg);
 private:
     KeyValue m_priceSheet;          // cached price_sheet.txt
     KeyValue m_passes;              // cached passes.txt
@@ -90,5 +95,14 @@ private:
 
     // Helper: parse "STEAM_0:X:YYYY" -> account ID
     static uint32_t SteamIDStringToAccountId(const std::string& str);
+
     void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate& msg);
+    // Overwatch case management
+    std::mutex m_overwatchMutex;
+    std::vector<uint32_t> m_overwatchSuspects;
+    size_t m_nextOverwatchIndex = 0;
+    uint64_t m_nextCaseId = 1;
+
+    // Steam HTTP callback
+    CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
 };
