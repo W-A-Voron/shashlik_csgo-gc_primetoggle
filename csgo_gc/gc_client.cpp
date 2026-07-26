@@ -212,6 +212,103 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     }
 }
 
+void ClientGC::ProcessGiftUse(uint64_t giftId)
+{
+    const CSOEconItem *giftItem = m_inventory.GetItem(giftId);
+    if (!giftItem)
+    {
+        Platform::Print("Gift item not found\n");
+        return;
+    }
+
+    uint32_t defIndex = giftItem->def_index();
+
+    // Determine number of recipients (items to give)
+    int numItems = 1;
+    if (defIndex == ItemSchema::Gift1Player) numItems = 1;
+    else if (defIndex == ItemSchema::Gift9Players) numItems = 9;
+    else if (defIndex == ItemSchema::Gift25Spectators) numItems = 25;
+    else {
+        Platform::Print("Unknown gift type\n");
+        return;
+    }
+
+    // Get the "set supply crate series" attribute value
+    uint32_t series = 0;
+    uint32_t attrDef = m_itemSchema.GetAttributeDefIndex("set supply crate series");
+    if (attrDef)
+    {
+        for (const auto &attr : giftItem->attribute())
+        {
+            if (attr.def_index() == attrDef)
+            {
+                series = m_itemSchema.AttributeUint32(&attr);
+                break;
+            }
+        }
+    }
+
+    if (series == 0)
+    {
+        Platform::Print("Gift has no supply crate series\n");
+        return;
+    }
+
+    const LootList *lootList = m_itemSchema.GetLootListBySeries(series);
+    if (!lootList)
+    {
+        Platform::Print("No loot list for series %u\n", series);
+        return;
+    }
+
+    // Prepare updates
+    CMsgSOMultipleObjects updateMultiple;
+    CMsgSOSingleObject destroy;
+    CMsgGCItemCustomizationNotification notification;
+    notification.set_request(k_EGCItemCustomizationNotification_Gift);
+
+    CaseOpening caseOpening(m_itemSchema, m_random);
+
+    for (int i = 0; i < numItems; i++)
+    {
+        CSOEconItem newItemProto;
+        if (!caseOpening.SelectItemFromLootList(*lootList, newItemProto))
+        {
+            Platform::Print("Failed to select item from loot list\n");
+            continue;
+        }
+
+        // Create actual item in inventory
+        CSOEconItem &createdItem = m_inventory.CreateItem(newItemProto);
+        m_inventory.AddToMultipleObjects(updateMultiple, createdItem);
+        notification.add_item_id(createdItem.id());
+    }
+
+    // Destroy the gift if configured
+    if (GetConfig().DestroyUsedItems())
+    {
+        m_inventory.RemoveItem(giftId, destroy);
+    }
+
+    // Send updates to game server and client
+    if (updateMultiple.objects_modified_size() > 0)
+    {
+        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, updateMultiple);
+        SendMessageToGame(false, k_ESOMsg_UpdateMultiple, updateMultiple);
+    }
+
+    if (destroy.has_type_id())
+    {
+        SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
+        SendMessageToGame(false, k_ESOMsg_Destroy, destroy);
+    }
+
+    if (notification.item_id_size() > 0)
+    {
+        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+    }
+}
+
 void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 {
     // pass 0 as type so it gets parsed from the message
