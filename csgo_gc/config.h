@@ -87,4 +87,4 @@ private:
     std::vector<int> m_friends{ 1140104601 };
 };
 
-const GCConfig &GetConfig();
+GCConfig &GetConfig();
