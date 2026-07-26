@@ -5,21 +5,8 @@
 
 constexpr const char *ConfigFilePath = "csgo_gc/config.txt";
 
-const GCConfig &GetConfig()
+void GCConfig::Parse(const KeyValue& config)
 {
-    static GCConfig instance;
-    return instance;
-}
-
-GCConfig::GCConfig()
-{
-    KeyValue config{ "config" };
-
-    if (!config.ParseFromFile(ConfigFilePath))
-    {
-        return;
-    }
-
     m_appIdOverride = config.GetNumber("appid_override", m_appIdOverride);
     m_showCsgoGCServersOnly = config.GetNumber("show_csgo_gc_servers_only", m_showCsgoGCServersOnly);
 
@@ -28,15 +15,13 @@ GCConfig::GCConfig()
     {
         m_competitiveRank = ranks->GetNumber("competitive_rank", m_competitiveRank);
         m_competitiveWins = ranks->GetNumber("competitive_wins", m_competitiveWins);
-
         m_wingmanRank = ranks->GetNumber("wingman_rank", m_wingmanRank);
         m_wingmanWins = ranks->GetNumber("wingman_wins", m_wingmanWins);
-
         m_dangerZoneRank = ranks->GetNumber("dangerzone_rank", m_dangerZoneRank);
         m_dangerZoneWins = ranks->GetNumber("dangerzone_wins", m_dangerZoneWins);
     }
-	
-	m_forceMaxRarity = config.GetNumber("force_max_rarity", m_forceMaxRarity);
+
+    m_forceMaxRarity = config.GetNumber("force_max_rarity", m_forceMaxRarity);
     m_destroyUsedItems = config.GetNumber("destroy_used_items", m_destroyUsedItems);
     m_randomizeFloat = config.GetNumber("randomize_item_float", m_randomizeFloat);
 
@@ -45,7 +30,6 @@ GCConfig::GCConfig()
     {
         m_rarityWeights.clear();
         m_rarityWeights.reserve(rarityWeights->SubkeyCount());
-
         for (const KeyValue &subkey : *rarityWeights)
         {
             RarityWeight weight;
@@ -60,7 +44,6 @@ GCConfig::GCConfig()
     {
         m_friends.clear();
         m_friends.reserve(friends->SubkeyCount());
-
         for (const KeyValue &subkey : *friends)
         {
             uint32_t friendId = FromString<uint32_t>(subkey.Name());
@@ -69,7 +52,7 @@ GCConfig::GCConfig()
     }
 
     m_vacBanned = config.GetNumber("vac_banned", m_vacBanned);
-	m_hasPrime = config.GetNumber("has_prime", 1);
+    m_hasPrime = config.GetNumber("has_prime", 1);
     m_commendedFriendly = config.GetNumber("cmd_friendly", m_commendedFriendly);
     m_commendedTeaching = config.GetNumber("cmd_teaching", m_commendedTeaching);
     m_commendedLeader = config.GetNumber("cmd_leader", m_commendedLeader);
@@ -89,6 +72,22 @@ GCConfig::GCConfig()
         m_level = 0;
         m_xp = 0;
     }
+}
+
+GCConfig::GCConfig()
+{
+    KeyValue config{ "config" };
+    if (!config.ParseFromFile(ConfigFilePath))
+        return;
+    Parse(config);
+}
+
+void GCConfig::ReloadFromFile()
+{
+    KeyValue config{ "config" };
+    if (!config.ParseFromFile(ConfigFilePath))
+        return;
+    Parse(config);
 }
 
 float GCConfig::GetRarityWeight(uint32_t rarity) const
