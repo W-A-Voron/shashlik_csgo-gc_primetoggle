@@ -4,7 +4,6 @@
 #include "keyvalue.h"
 #include <filesystem>
 #include "case_opening.h"
-#include <steam/steam_api.h>          // for HTTPRequestCompleted_t, CCallback
 #include <steam/isteamhttp.h>         // for ISteamHTTP
 
 ClientGC::ClientGC(uint64_t steamId)
@@ -1271,12 +1270,12 @@ void ClientGC::FetchOverwatchCases()
         Platform::Print("Overwatch: failed to send request\n");
     // No need to store hCall; the callback system handles it.
 }
-void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback, bool bIOFailure)
+void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
 {
-    if (bIOFailure || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
+    if (pCallback->m_bIOFailure || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
     {
         Platform::Print("Overwatch: HTTP request failed (status %d, iofailure %d)\n",
-                        pCallback->m_eStatusCode, bIOFailure);
+                        pCallback->m_eStatusCode, pCallback->m_bIOFailure);
         return;
     }
 
@@ -1433,7 +1432,6 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
         "\"caseid\":" + std::to_string(msg.caseid()) + ","
         "\"suspectid\":" + std::to_string(msg.suspectid()) + ","
         "\"reason\":" + std::to_string(msg.reason()) + ","
-        "\"verdict\":" + std::to_string(msg.verdict()) + ","
         "\"timestamp\":" + std::to_string(time(nullptr)) +
     "}";
 
