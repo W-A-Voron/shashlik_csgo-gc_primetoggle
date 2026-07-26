@@ -1437,7 +1437,7 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
         "\"timestamp\":" + std::to_string(time(nullptr)) +
     "}";
 
-    HTTPRequestHandle hRequest = http->CreateHTTPRequest(k_EHTTPMethodPOST, "https://your-worker.workers.dev/verdict");
+    HTTPRequestHandle hRequest = http->CreateHTTPRequest(k_EHTTPMethodPOST, "https://still-dawn-e090.ivanhihlov4.workers.dev/verdict");
     if (hRequest == k_uAPICallInvalid) return;
 
     http->SetHTTPRequestHeaderValue(hRequest, "Content-Type", "application/json");
