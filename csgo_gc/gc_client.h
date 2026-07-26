@@ -9,8 +9,12 @@ class ClientGC final : public SharedGC
 public:
     ClientGC(uint64_t steamId);
     ~ClientGC();
-    void CheckInventoryReload();
+    void CheckFileReloads();
 private:
+    KeyValue m_priceSheet;          // cached price_sheet.txt
+    KeyValue m_passes;              // cached passes.txt
+    KeyValue m_unusualLootLists;    // cached unusual_loot_lists.txt
+
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
     bool m_isSearching{ false };
     // event handlers
@@ -67,4 +71,8 @@ private:
 
     void SendInventoryUpdate();
     void ReloadInventory();
+    void ReloadConfig();
+    void ReloadPriceSheet();
+    void ReloadPasses();
+    void ReloadUnusualLootLists();
 };
