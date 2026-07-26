@@ -434,11 +434,28 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
         return;
     }
 
+    uint64_t itemId = message.item_id();
+
+    // Check if it's a gift
+    const CSOEconItem *giftItem = m_inventory.GetItem(itemId);
+    if (giftItem)
+    {
+        uint32_t defIndex = giftItem->def_index();
+        if (defIndex == ItemSchema::Gift1Player || 
+            defIndex == ItemSchema::Gift9Players || 
+            defIndex == ItemSchema::Gift25Spectators)
+        {
+            ProcessGiftUse(itemId);
+            return;
+        }
+    }
+
+    // Normal use handling
     CMsgSOSingleObject destroy;
     CMsgSOMultipleObjects updateMultiple;
     CMsgGCItemCustomizationNotification notification;
 
-    if (m_inventory.UseItem(message.item_id(), destroy, updateMultiple, notification))
+    if (m_inventory.UseItem(itemId, destroy, updateMultiple, notification))
     {
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, updateMultiple);
