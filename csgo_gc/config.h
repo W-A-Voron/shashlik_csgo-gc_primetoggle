@@ -13,7 +13,7 @@ class GCConfig
 {
 public:
     GCConfig();
-
+	void ReloadFromFile();
     // options used by steam hook
     uint32_t AppIdOverride() const { return m_appIdOverride; }
     bool ShowCsgoGCServersOnly() const { return m_showCsgoGCServersOnly; }
@@ -45,6 +45,7 @@ public:
     std::vector<int> GetFriends() const { return m_friends; };
 
 private:
+	void Parse(const KeyValue& config);
     // actually default to 4465480 instead of 730, people are going to use old configs
     // and then wonder why the game doesn't work and open an issue on github otherwise
     uint32_t m_appIdOverride{ 4465480 };
