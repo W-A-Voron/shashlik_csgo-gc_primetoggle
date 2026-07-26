@@ -25,3 +25,5 @@
 
 // used in many files for logging
 #include "platform.h"
+
+#include <steam/steamtypes.h>
