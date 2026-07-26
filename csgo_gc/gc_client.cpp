@@ -226,11 +226,11 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
 
     // Determine number of recipients (items to give)
     int numItems = 1;
-    if (defIndex == ::Gift1Player)
+    if (defIndex == 1210)
         numItems = 1;
-    else if (defIndex == ::Gift9Players)
+    else if (defIndex == 1211)
         numItems = 9;
-    else if (defIndex == ::Gift25Spectators)
+    else if (defIndex == 1215)
         numItems = 25;
     else {
         Platform::Print("Unknown gift type\n");
