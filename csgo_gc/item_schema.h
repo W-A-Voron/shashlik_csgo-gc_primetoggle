@@ -18,6 +18,7 @@ public:
     explicit AttributeInfo(const KeyValue &key);
 
     AttributeType m_type;
+    std::string m_name;
 };
 
 class ItemInfo
@@ -131,7 +132,8 @@ public:
     // item creation: id and account id not set, needs to be done by the caller
     bool CreateItem(uint32_t defIndex, ItemOrigin origin, UnacknowledgedType unacknowledgedType, CSOEconItem &econItem) const;
     bool PassItemsData(KeyValue &itemsData, uint32_t defIndex) const;
-
+    uint32_t GetAttributeDefIndex(const std::string &name) const;
+    const LootList* GetLootListBySeries(uint32_t series) const;
 public:
     // these could be parsed from the item schema but reduce code complexity by hardcoding them
     enum Rarity
@@ -235,6 +237,7 @@ public:
     };
 
 private:
+    std::unordered_map<std::string, uint32_t> m_attributeNameToDefIndex;
     void ApplyMaxRarityFilter();
     void ParseItems(const KeyValue *itemsKey, const KeyValue *prefabsKey);
     void ParseItemRecursive(ItemInfo &info, const KeyValue &itemKey, const KeyValue *prefabsKey);
