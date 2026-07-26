@@ -28,11 +28,6 @@ enum ItemDefIndex
     Gift25Spectators = 1215,
 };
 
-enum EGCItemCustomizationNotification
-{
-    k_EGCItemCustomizationNotification_Gift = 15, // guessed; adjust if known
-};
-
 enum RankId : uint32_t
 {
     RankNone,
