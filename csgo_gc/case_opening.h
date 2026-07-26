@@ -12,7 +12,7 @@ public:
     CaseOpening(const ItemSchema &itemSchema, Random &random);
 
     bool SelectItemFromCrate(const CSOEconItem &crate, CSOEconItem &item);
-
+    bool SelectItemFromLootList(const LootList &lootList, CSOEconItem &item);
 private:
     const LootListItem *SelectLootListItem(const std::vector<const LootListItem *> &items);
     uint32_t RandomRarityForItems(const std::vector<const LootListItem *> &items);
