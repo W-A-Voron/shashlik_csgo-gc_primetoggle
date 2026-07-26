@@ -114,6 +114,17 @@ private:
     int m_lineNumber;
 };
 
+bool KeyValue::IsEmpty() const
+{
+    return m_subkeys.empty() && m_string.empty();
+}
+
+void KeyValue::Clear()
+{
+    m_subkeys.clear();
+    m_string.clear();
+}
+
 std::string LoadFile(const char *path)
 {
     FILE *f = fopen(path, "rb");
