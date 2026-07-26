@@ -225,24 +225,27 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
 
     // Determine number of recipients (items to give)
     int numItems = 1;
-    if (defIndex == ItemSchema::Gift1Player) numItems = 1;
-    else if (defIndex == ItemSchema::Gift9Players) numItems = 9;
-    else if (defIndex == ItemSchema::Gift25Spectators) numItems = 25;
+    if (defIndex == Gift1Player)          // global constant from gc_const_csgo.h
+        numItems = 1;
+    else if (defIndex == Gift9Players)    // global constant
+        numItems = 9;
+    else if (defIndex == Gift25Spectators)// global constant
+        numItems = 25;
     else {
         Platform::Print("Unknown gift type\n");
         return;
     }
 
-    // Get the "set supply crate series" attribute value
+    // Get the "set supply crate series" attribute value via Inventory's ItemSchema
     uint32_t series = 0;
-    uint32_t attrDef = m_itemSchema.GetAttributeDefIndex("set supply crate series");
+    uint32_t attrDef = m_inventory.GetItemSchema().GetAttributeDefIndex("set supply crate series");
     if (attrDef)
     {
         for (const auto &attr : giftItem->attribute())
         {
             if (attr.def_index() == attrDef)
             {
-                series = m_itemSchema.AttributeUint32(&attr);
+                series = m_inventory.GetItemSchema().AttributeUint32(&attr);
                 break;
             }
         }
@@ -254,7 +257,7 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         return;
     }
 
-    const LootList *lootList = m_itemSchema.GetLootListBySeries(series);
+    const LootList *lootList = m_inventory.GetItemSchema().GetLootListBySeries(series);
     if (!lootList)
     {
         Platform::Print("No loot list for series %u\n", series);
@@ -265,9 +268,10 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
     CMsgSOMultipleObjects updateMultiple;
     CMsgSOSingleObject destroy;
     CMsgGCItemCustomizationNotification notification;
-    notification.set_request(k_EGCItemCustomizationNotification_Gift);
+    notification.set_request(k_EGCItemCustomizationNotification_Gift); // from protobuf enum
 
-    CaseOpening caseOpening(m_itemSchema, m_random);
+    // Use Inventory's schema and random generator
+    CaseOpening caseOpening(m_inventory.GetItemSchema(), m_inventory.GetRandom());
 
     for (int i = 0; i < numItems; i++)
     {
@@ -280,7 +284,8 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
 
         // Create actual item in inventory
         CSOEconItem &createdItem = m_inventory.CreateItem(newItemProto);
-        m_inventory.AddToMultipleObjects(updateMultiple, createdItem);
+        // AddToMultipleObjects is now public and accepts the SOTypeId
+        m_inventory.AddToMultipleObjects(updateMultiple, SOTypeItem, createdItem);
         notification.add_item_id(createdItem.id());
     }
 
@@ -308,6 +313,7 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 }
+
 
 void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 {
