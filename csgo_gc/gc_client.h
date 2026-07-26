@@ -17,7 +17,7 @@ public:
     void CheckFileReloads();
 
     // Overwatch HTTP callback
-    void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback, bool bIOFailure);
+    void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
     void OnOverwatchCaseStatus(GCMessageRead &messageRead);
     void OnOverwatchCaseUpdate(GCMessageRead &messageRead);
 
