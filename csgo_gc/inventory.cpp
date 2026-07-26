@@ -92,6 +92,14 @@ uint32_t Inventory::AccountId() const
     return m_steamId & 0xffffffff;
 }
 
+const CSOEconItem* Inventory::GetItem(uint64_t itemId) const
+{
+    auto it = m_items.find(itemId);
+    if (it != m_items.end())
+        return &it->second;
+    return nullptr;
+}
+
 CSOEconItem &Inventory::AllocateItem(uint32_t highItemId)
 {
     // Players fuck up their inventory files constantly and end up with item id collisions...
