@@ -11,11 +11,14 @@ public:
     ClientGC(uint64_t steamId);
     ~ClientGC();
     void CheckFileReloads();
+
+    // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback, bool bIOFailure);
     void OnOverwatchCaseStatus(GCMessageRead &messageRead);
     void OnOverwatchCaseUpdate(GCMessageRead &messageRead);
     void SendOverwatchCaseAssignment(uint32_t suspectAccountId);
     void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate &msg);
+
 private:
     KeyValue m_priceSheet;          // cached price_sheet.txt
     KeyValue m_passes;              // cached passes.txt
@@ -87,9 +90,6 @@ private:
     uint64_t m_nextCaseId = 1;
     std::mutex m_overwatchMutex;
 
-    // HTTP callback for overwatch.json
-    STEAM_CALLBACK(ClientGC, OnOverwatchHTTPResponse, HTTPRequestCompleted_t, m_overwatchHTTPCallback);
-
     void FetchOverwatchCases();
     void SendOverwatchCaseAssignment(uint32_t suspectAccountId);
 
@@ -97,12 +97,15 @@ private:
     static uint32_t SteamIDStringToAccountId(const std::string& str);
 
     void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate& msg);
-    // Overwatch case management
-    std::mutex m_overwatchMutex;
+    // Overwatch data – declare only once
     std::vector<uint32_t> m_overwatchSuspects;
     size_t m_nextOverwatchIndex = 0;
     uint64_t m_nextCaseId = 1;
+    std::mutex m_overwatchMutex;
 
-    // Steam HTTP callback
+    // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
+
+    void FetchOverwatchCases();                     // declaration (if not already)
+    static uint32_t SteamIDStringToAccountId(const std::string& str);
 };
