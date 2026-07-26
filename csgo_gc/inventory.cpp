@@ -421,7 +421,7 @@ bool Inventory::EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId, CM
         defaultEquip.set_class_id(classId);
         defaultEquip.set_slot_id(slotId);
 
-        AddToMultipleObjects(update, defaultEquip);
+        AddToMultipleObjects(update, SOTypeDefaultEquippedDefinitionInstanceClient, defaultEquip);
 
         return true;
     }
@@ -1440,7 +1440,7 @@ void Inventory::UnequipItem(uint32_t classId, uint32_t slotId, CMsgSOMultipleObj
             // because the new equip overrides the old one
             // but we can't just remove it either because "update" would get fucked
             it->set_item_definition(0);
-            AddToMultipleObjects(update, *it);
+            AddToMultipleObjects(update, SOTypeDefaultEquippedDefinitionInstanceClient, *it);
 
             it = m_defaultEquips.erase(it);
         }
