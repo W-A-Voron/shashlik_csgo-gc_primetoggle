@@ -1272,10 +1272,10 @@ void ClientGC::FetchOverwatchCases()
 }
 void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
 {
-    if (pCallback->m_bIOFailure || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
+    if (!pCallback->m_bRequestSuccessful || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
     {
-        Platform::Print("Overwatch: HTTP request failed (status %d, iofailure %d)\n",
-                        pCallback->m_eStatusCode, pCallback->m_bIOFailure);
+        Platform::Print("Overwatch: HTTP request failed (status %d, success %d)\n",
+                        pCallback->m_eStatusCode, pCallback->m_bRequestSuccessful);
         return;
     }
 
