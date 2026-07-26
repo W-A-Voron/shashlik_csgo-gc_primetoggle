@@ -13,12 +13,15 @@ class Inventory
 public:
     Inventory(uint64_t steamId);
     ~Inventory();
-
+    
     void BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level, bool server);
 
     bool EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId, CMsgSOMultipleObjects &update);
 
-    bool RemoveItem(uint64_t itemId, CMsgSOSingleObject &destroy);
+    const CSOEconItem* GetItem(uint64_t itemId) const;
+    CSOEconItem& CreateItem(const CSOEconItem &copyFrom); // make public
+    void AddToMultipleObjects(CMsgSOMultipleObjects &message, SOTypeId type, const google::protobuf::MessageLite &object); // make public
+    bool RemoveItem(uint64_t itemId, CMsgSOSingleObject &destroy); // already public
 
     bool UseItem(uint64_t itemId,
         CMsgSOSingleObject &destroy,
@@ -101,7 +104,6 @@ private:
     CSOEconItem &AllocateItem(uint32_t highItemId);
 
     // create a new item of a specific type
-    CSOEconItem &CreateItem(const CSOEconItem &copyFrom);
     CSOEconItem &CreateItem(uint32_t defIndex, ItemOrigin origin, UnacknowledgedType unacknowledgedType);
 
     void ReadFromFile();
