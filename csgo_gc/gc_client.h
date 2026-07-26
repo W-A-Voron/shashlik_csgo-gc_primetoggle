@@ -76,4 +76,18 @@ private:
     void ReloadPriceSheet();
     void ReloadPasses();
     void ReloadUnusualLootLists();
+    // Overwatch data
+    std::vector<uint32_t> m_overwatchSuspects;   // account IDs from overwatch.json
+    size_t m_nextOverwatchIndex = 0;
+    uint64_t m_nextCaseId = 1;
+    std::mutex m_overwatchMutex;
+
+    // HTTP callback for overwatch.json
+    STEAM_CALLBACK(ClientGC, OnOverwatchHTTPResponse, HTTPRequestCompleted_t, m_overwatchHTTPCallback);
+
+    void FetchOverwatchCases();
+    void SendOverwatchCaseAssignment(uint32_t suspectAccountId);
+
+    // Helper: parse "STEAM_0:X:YYYY" -> account ID
+    static uint32_t SteamIDStringToAccountId(const std::string& str);
 };
