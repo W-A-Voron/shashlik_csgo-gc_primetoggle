@@ -545,9 +545,9 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
     if (giftItem)
     {
         uint32_t defIndex = giftItem->def_index();
-        if (defIndex == ItemSchema::Gift1Player || 
-            defIndex == ItemSchema::Gift9Players || 
-            defIndex == ItemSchema::Gift25Spectators)
+        if (defIndex == 1210 || 
+            defIndex == 1211 || 
+            defIndex == 1215)
         {
             ProcessGiftUse(itemId);
             return;
