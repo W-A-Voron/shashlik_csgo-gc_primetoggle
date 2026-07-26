@@ -596,20 +596,24 @@ void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
         return;
     }
 
-    KeyValue priceSheet{ "price_sheet" };
-    if (!priceSheet.ParseFromFile("csgo_gc/price_sheet.txt"))
+    // If price sheet hasn't been loaded yet, load it now.
+    if (m_priceSheet.IsEmpty())
     {
-        return;
+        ReloadPriceSheet();
+        if (m_priceSheet.IsEmpty())
+        {
+            Platform::Print("StoreGetUserData: price sheet is empty, cannot respond\n");
+            return;
+        }
     }
 
     std::string binaryString;
     binaryString.reserve(1 << 17);
-    priceSheet.BinaryWriteToString(binaryString);
+    m_priceSheet.BinaryWriteToString(binaryString);
 
-    // fuck you idiot
     CMsgStoreGetUserDataResponse response;
     response.set_result(1);
-    response.set_price_sheet_version(1729); // what
+    response.set_price_sheet_version(1729); // or store a version from the file
     *response.mutable_price_sheet() = std::move(binaryString);
 
     SendMessageToGame(false, k_EMsgGCStoreGetUserDataResponse, response);
@@ -1027,21 +1031,41 @@ void ClientGC::SendInventoryUpdate()
 }
 
 
-void ClientGC::CheckInventoryReload()
+void ClientGC::CheckFileReloads()
 {
-    static auto lastWrite = std::filesystem::file_time_type::min();
     namespace fs = std::filesystem;
 
-    fs::path path = "csgo_gc/inventory.txt";
-    if (!fs::exists(path))
-        return;
+    struct WatchedFile {
+        fs::path path;
+        fs::file_time_type& lastWrite;
+        void (ClientGC::*reloadFn)();
+    };
 
-    auto currentWrite = fs::last_write_time(path);
-    if (currentWrite != lastWrite)
-    {
-        lastWrite = currentWrite;
-        Platform::Print("Inventory file changed – reloading...\n");
-        ReloadInventory();
+    // Static variables to remember the last modification time of each file
+    static fs::file_time_type lastInventoryWrite = fs::file_time_type::min();
+    static fs::file_time_type lastConfigWrite = fs::file_time_type::min();
+    static fs::file_time_type lastPriceSheetWrite = fs::file_time_type::min();
+    static fs::file_time_type lastPassesWrite = fs::file_time_type::min();
+    static fs::file_time_type lastUnusualLootWrite = fs::file_time_type::min();
+
+    WatchedFile files[] = {
+        { "csgo_gc/inventory.txt",         lastInventoryWrite,   &ClientGC::ReloadInventory      },
+        { "csgo_gc/config.txt",            lastConfigWrite,      &ClientGC::ReloadConfig         },
+        { "csgo_gc/price_sheet.txt",       lastPriceSheetWrite,  &ClientGC::ReloadPriceSheet     },
+        { "csgo_gc/passes.txt",            lastPassesWrite,      &ClientGC::ReloadPasses         },
+        { "csgo_gc/unusual_loot_lists.txt",lastUnusualLootWrite, &ClientGC::ReloadUnusualLootLists }
+    };
+
+    for (auto& file : files) {
+        if (!fs::exists(file.path))
+            continue;
+
+        auto currentWrite = fs::last_write_time(file.path);
+        if (currentWrite != file.lastWrite) {
+            file.lastWrite = currentWrite;
+            Platform::Print("%s changed – reloading...\n", file.path.filename().string().c_str());
+            (this->*file.reloadFn)();
+        }
     }
 }
 
@@ -1050,3 +1074,52 @@ void ClientGC::ReloadInventory()
     m_inventory.ReloadFromFile();
     SendInventoryUpdate();
 }
+
+void ClientGC::ReloadConfig()
+{
+    // Reload configuration from file (e.g., config.txt)
+    GetConfig().ReloadFromFile();
+
+    // The client cache subscription includes the player's level,
+    // so we need to push an updated cache.
+    SendInventoryUpdate();
+
+    // Ranks may have changed as well, so send a rank update.
+    SendRankUpdate();
+}
+
+void ClientGC::ReloadPriceSheet()
+{
+    m_priceSheet.Clear();
+    if (!m_priceSheet.ParseFromFile("csgo_gc/price_sheet.txt"))
+    {
+        Platform::Print("ReloadPriceSheet: failed to load price_sheet.txt\n");
+        return;
+    }
+    // Optionally store the version from the file if needed.
+    // m_priceSheetVersion = ...; // if you track a version number
+    Platform::Print("ReloadPriceSheet: price sheet reloaded\n");
+}
+
+void ClientGC::ReloadPasses()
+{
+    m_passes.Clear();
+    if (!m_passes.ParseFromFile("csgo_gc/passes.txt"))
+    {
+        Platform::Print("ReloadPasses: failed to load passes.txt\n");
+        return;
+    }
+    Platform::Print("ReloadPasses: pass definitions reloaded\n");
+}
+
+void ClientGC::ReloadUnusualLootLists()
+{
+    m_unusualLootLists.Clear();
+    if (!m_unusualLootLists.ParseFromFile("csgo_gc/unusual_loot_lists.txt"))
+    {
+        Platform::Print("ReloadUnusualLootLists: failed to load unusual_loot_lists.txt\n");
+        return;
+    }
+    Platform::Print("ReloadUnusualLootLists: unusual loot lists reloaded\n");
+}
+
