@@ -1424,15 +1424,16 @@ void ClientGC::OnOverwatchCaseStatus(GCMessageRead& messageRead)
 void ClientGC::OnOverwatchCaseUpdate(GCMessageRead& messageRead)
 {
     CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate msg;
-    if (!messageRead.ReadProtobuf(msg))
-    {
+    if (!messageRead.ReadProtobuf(msg)) {
         Platform::Print("Failed to parse OverwatchCaseUpdate\n");
         return;
     }
 
     Platform::Print("Overwatch: verdict for case %llu, suspect %u, reason %u\n",
                     msg.caseid(), msg.suspectid(), msg.reason());
-    // No response needed – the GC just logs the verdict
+
+    // Send to Cloudflare Worker
+    SendVerdictToCloudflare(msg);
 }
 
 void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate& msg)
