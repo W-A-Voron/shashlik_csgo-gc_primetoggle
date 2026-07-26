@@ -35,7 +35,7 @@ jobs:
         fi
 
         # Set include paths: current dir and protoc's built-in include
-        PROTO_INCLUDE="-I. -I$GITHUB_WORKSPACE/protoc/include"
+        PROTO_INCLUDE="-I. -I$GITHUB_WORKSPACE/protobufs -I$GITHUB_WORKSPACE/protoc/include"
 
         # Regenerate each .proto (protoc generates .pb.cc and .pb.h in the same directory)
         for proto in $PROTO_FILES; do
