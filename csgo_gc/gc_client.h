@@ -3,6 +3,7 @@
 #include "config.h"
 #include "gc_shared.h"
 #include "inventory.h"
+#include "keyvalue.h"
 
 class ClientGC final : public SharedGC
 {
