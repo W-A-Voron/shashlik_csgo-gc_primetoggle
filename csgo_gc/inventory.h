@@ -22,6 +22,9 @@ public:
     CSOEconItem& CreateItem(const CSOEconItem &copyFrom); // make public
     void AddToMultipleObjects(CMsgSOMultipleObjects &message, SOTypeId type, const google::protobuf::MessageLite &object); // make public
     bool RemoveItem(uint64_t itemId, CMsgSOSingleObject &destroy); // already public
+    ItemSchema& GetItemSchema() { return m_itemSchema; }
+    Random& GetRandom() { return m_random; }
+
 
     bool UseItem(uint64_t itemId,
         CMsgSOSingleObject &destroy,
@@ -133,11 +136,6 @@ private:
     void ToSingleObject(CMsgSOSingleObject &message, const CSOEconItem &object)
     {
         ToSingleObject(message, SOTypeItem, object);
-    }
-
-    void AddToMultipleObjects(CMsgSOMultipleObjects &message, const CSOEconDefaultEquippedDefinitionInstanceClient &object)
-    {
-        AddToMultipleObjects(message, SOTypeDefaultEquippedDefinitionInstanceClient, object);
     }
 
     void ToSingleObject(CMsgSOSingleObject &message, const CSOEconDefaultEquippedDefinitionInstanceClient &object)
