@@ -162,3 +162,20 @@ bool CaseOpening::ShouldMakeStatTrak(const LootListItem &item, const LootList &l
     // roll the dice
     return (m_random.Integer(1, 10) == 1);
 }
+
+bool CaseOpening::SelectItemFromLootList(const LootList &lootList, CSOEconItem &item)
+{
+    std::vector<const LootListItem *> lootListItems;
+    lootListItems.reserve(32);
+    bool containsUnusuals = GetLootListItems(lootList, lootListItems);
+    if (!lootListItems.size())
+        return false;
+
+    std::sort(lootListItems.begin(), lootListItems.end(), CompareRarity);
+    const LootListItem *lootListItem = SelectLootListItem(lootListItems);
+    if (!lootListItem)
+        return false;
+
+    bool statTrak = ShouldMakeStatTrak(*lootListItem, lootList, containsUnusuals);
+    return m_itemSchema.CreateItemFromLootListItem(m_random, *lootListItem, statTrak, ItemOriginCrate, UnacknowledgedFoundInCrate, item);
+}
