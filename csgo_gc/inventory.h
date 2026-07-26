@@ -122,7 +122,6 @@ private:
     void ItemToPreviewDataBlock(const CSOEconItem &item, CEconItemPreviewDataBlock &block);
 
     // helpers for serializing items to CMsgSOMultipleObjects and CMsgSOSingleObject
-    void AddToMultipleObjects(CMsgSOMultipleObjects &message, SOTypeId type, const google::protobuf::MessageLite &object);
     void ToSingleObject(CMsgSOSingleObject &message, SOTypeId type, const google::protobuf::MessageLite &object);
 
     // helpers for above..
