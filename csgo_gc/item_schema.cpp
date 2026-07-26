@@ -829,9 +829,29 @@ void ItemSchema::ParseAttributes(const KeyValue *attributesKey)
     for (const KeyValue &attributeKey : *attributesKey)
     {
         uint32_t defIndex = FromString<uint32_t>(attributeKey.Name());
-        assert(defIndex);
-        m_attributeInfo.try_emplace(defIndex, attributeKey);
+        AttributeInfo info(attributeKey);
+        info.m_name = attributeKey.GetString("name");
+        m_attributeInfo.try_emplace(defIndex, info);
+        if (!info.m_name.empty())
+            m_attributeNameToDefIndex[info.m_name] = defIndex;
     }
+    
+}
+
+uint32_t ItemSchema::GetAttributeDefIndex(const std::string &name) const
+{
+    auto it = m_attributeNameToDefIndex.find(name);
+    if (it != m_attributeNameToDefIndex.end())
+        return it->second;
+    return 0;
+}
+
+const LootList* ItemSchema::GetLootListBySeries(uint32_t series) const
+{
+    auto it = m_revolvingLootLists.find(series);
+    if (it != m_revolvingLootLists.end())
+        return &it->second;
+    return nullptr;
 }
 
 void ItemSchema::ParseStickerKits(const KeyValue *stickerKitsKey)
