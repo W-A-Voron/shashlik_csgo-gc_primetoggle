@@ -5,6 +5,10 @@
 #include "inventory.h"
 #include "keyvalue.h"
 
+// Required for HTTPRequestCompleted_t and CCallback
+#include <steam/isteamhttp.h>
+#include <steam/steam_api_common.h>
+
 class ClientGC final : public SharedGC
 {
 public:
@@ -16,8 +20,6 @@ public:
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback, bool bIOFailure);
     void OnOverwatchCaseStatus(GCMessageRead &messageRead);
     void OnOverwatchCaseUpdate(GCMessageRead &messageRead);
-    void SendOverwatchCaseAssignment(uint32_t suspectAccountId);
-    void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate &msg);
 
 private:
     KeyValue m_priceSheet;          // cached price_sheet.txt
@@ -77,14 +79,14 @@ private:
     uint64_t m_transactionId{};
     std::vector<uint64_t> m_transactionItemIds;
 
-
     void SendInventoryUpdate();
     void ReloadInventory();
     void ReloadConfig();
     void ReloadPriceSheet();
     void ReloadPasses();
     void ReloadUnusualLootLists();
-    // Overwatch data
+
+    // Overwatch data (only one set)
     std::vector<uint32_t> m_overwatchSuspects;   // account IDs from overwatch.json
     size_t m_nextOverwatchIndex = 0;
     uint64_t m_nextCaseId = 1;
@@ -92,20 +94,11 @@ private:
 
     void FetchOverwatchCases();
     void SendOverwatchCaseAssignment(uint32_t suspectAccountId);
+    void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate &msg);
 
     // Helper: parse "STEAM_0:X:YYYY" -> account ID
     static uint32_t SteamIDStringToAccountId(const std::string& str);
 
-    void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate& msg);
-    // Overwatch data – declare only once
-    std::vector<uint32_t> m_overwatchSuspects;
-    size_t m_nextOverwatchIndex = 0;
-    uint64_t m_nextCaseId = 1;
-    std::mutex m_overwatchMutex;
-
     // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
-
-    void FetchOverwatchCases();                     // declaration (if not already)
-    static uint32_t SteamIDStringToAccountId(const std::string& str);
 };
