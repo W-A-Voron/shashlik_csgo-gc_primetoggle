@@ -28,7 +28,7 @@ jobs:
         cd $GITHUB_WORKSPACE
 
         # Find all .proto files in the root (adjust path if needed)
-        PROTO_FILES=$(find . -maxdepth 1 -name "*.proto" -type f)
+        PROTO_FILES=$(find .\protobufs\ -maxdepth 1 -name "*.proto" -type f)
         if [ -z "$PROTO_FILES" ]; then
           echo "No .proto files found in the root; check path."
           exit 1
