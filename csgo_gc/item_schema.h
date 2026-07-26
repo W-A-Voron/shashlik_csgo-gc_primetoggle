@@ -234,6 +234,7 @@ public:
         AttributeCasketModificationDate = 271,
         AttributeCasketIdLow = 272,
         AttributeCasketIdHigh = 273,
+        AttributeSupplyCrateSeries = 274,
     };
 
 private:
