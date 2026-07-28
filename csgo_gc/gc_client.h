@@ -104,4 +104,5 @@ private:
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
     std::unique_ptr<WebServer> m_webServer;
     void SendMatchmakingHelloUpdate();
+    uint64_t GetSteamId() const { return m_steamId; }
 };
