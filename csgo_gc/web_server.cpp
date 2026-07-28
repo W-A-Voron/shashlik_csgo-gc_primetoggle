@@ -110,10 +110,8 @@ static const char* HTML_PAGE = R"(
     loadBtn.addEventListener('click', () => loadFile(fileSelect.value));
     saveBtn.addEventListener('click', () => saveFile(fileSelect.value));
 
-    // auto-load first file on page load
     window.addEventListener('load', () => loadFile(fileSelect.value));
 
-    // Optional: reload config/inventory via POST (not implemented on server, but we can add later)
     document.getElementById('reloadConfigBtn').addEventListener('click', () => {
         fetch('/reload?type=config', { method: 'POST' })
             .then(r => r.text())
@@ -138,46 +136,22 @@ int WebServer::Start(int startPort)
 {
     if (m_running) return m_port;
 
-    int port = startPort;
-    const int maxPort = 65535;
+    m_server = std::make_unique<httplib::Server>();
+    SetupRoutes(*m_server);
 
-    while (port <= maxPort)
-    {
-        // Пропускаем порт 27015 (стандартный CS:GO)
-        if (port == 27015) {
-            ++port;
-            continue;
-        }
+    m_running = true;
+    m_port = startPort;
 
-        auto server = std::make_unique<httplib::Server>();
-        SetupRoutes(*server);
-
-        std::atomic<bool> started{ false };
-        std::thread worker([&server, port, &started]() {
-            if (server->listen("0.0.0.0", port))
-                started = true;
-        });
-
-        // Даём серверу время запуститься
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
-
-        if (started) {
-            m_server = std::move(server);
-            m_port = port;
-            m_running = true;
-            worker.detach();
-            Platform::Print("Web server is running at http://localhost:%d/\n", port);
-            return port;
+    m_thread = std::thread([this, startPort]() {
+        if (!m_server->listen("0.0.0.0", startPort)) {
+            Platform::Print("WebServer: failed to listen on port %d\n", startPort);
+            m_running = false;
         } else {
-            // Если не запустился – останавливаем и пробуем следующий порт
-            server->stop();
-            worker.join();
-            ++port;
+            Platform::Print("WebServer: running on port %d\n", startPort);
         }
-    }
+    });
 
-    Platform::Print("WebServer: no free port found in range %d-%d (skipping 27015)\n", startPort, maxPort);
-    return 0;
+    return startPort;
 }
 
 void WebServer::Stop()
@@ -187,20 +161,19 @@ void WebServer::Stop()
     if (m_server) {
         m_server->stop();
     }
-    if (m_thread.joinable())
+    if (m_thread.joinable()) {
         m_thread.join();
+    }
     m_server.reset();
     m_port = 0;
 }
 
 void WebServer::SetupRoutes(httplib::Server& srv)
 {
-    // Главная страница – HTML-интерфейс
     srv.Get("/", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(HTML_PAGE, "text/html");
     });
 
-    // GET /file?name=xxx
     srv.Get("/file", [](const httplib::Request& req, httplib::Response& res) {
         auto name = req.get_param_value("name");
         if (name.empty()) {
@@ -223,7 +196,6 @@ void WebServer::SetupRoutes(httplib::Server& srv)
         res.set_content(content, "text/plain");
     });
 
-    // POST /file?name=xxx
     srv.Post("/file", [](const httplib::Request& req, httplib::Response& res) {
         auto name = req.get_param_value("name");
         if (name.empty()) {
@@ -245,12 +217,9 @@ void WebServer::SetupRoutes(httplib::Server& srv)
         res.set_content("OK", "text/plain");
     });
 
-    // POST /reload?type=config или inventory (для удобства)
     srv.Post("/reload", [](const httplib::Request& req, httplib::Response& res) {
         auto type = req.get_param_value("type");
         if (type == "config") {
-            // Можно вызвать GetConfig().ReloadFromFile() – но это будет доступно только из ClientGC.
-            // Пока просто возвращаем уведомление.
             res.set_content("Config reload requested (implement in ClientGC)", "text/plain");
         } else if (type == "inventory") {
             res.set_content("Inventory reload requested (implement in ClientGC)", "text/plain");
