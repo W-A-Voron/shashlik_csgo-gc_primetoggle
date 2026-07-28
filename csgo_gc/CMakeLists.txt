@@ -39,6 +39,9 @@ target_include_directories(csgo_gc PRIVATE ../protobufs)
 target_sources(csgo_gc PRIVATE ${PROTOBUFS})
 source_group("Protobufs" FILES ${PROTOBUFS})
 
+target_sources(csgo_gc PRIVATE web_server.cpp)
+target_include_directories(csgo_gc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 target_link_libraries(csgo_gc PRIVATE
     cryptopp
     funchook-static
