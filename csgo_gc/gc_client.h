@@ -4,6 +4,7 @@
 #include "gc_shared.h"
 #include "inventory.h"
 #include "keyvalue.h"
+#include "web_server.h"
 
 // Required for HTTPRequestCompleted_t and CCallback
 #include <steam/isteamhttp.h>
@@ -101,4 +102,5 @@ private:
 
     // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
+    std::unique_ptr<WebServer> m_webServer;
 };
