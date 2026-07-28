@@ -32,6 +32,5 @@ bool PatchGraffitiPublicKey(std::string_view moduleName, const void *original, c
 // returns true if serverbrowser was loaded and we patched it
 bool PatchServerBrowserAppId(uint32_t appId);
 
-void Notify(const char *message);
 
 } // namespace Platform
