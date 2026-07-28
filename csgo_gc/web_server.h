@@ -18,7 +18,7 @@ public:
 
 private:
     void WorkerThread(int port);
-    void SetupRoutes();
+    void SetupRoutes(httplib::Server& srv);   // теперь принимает ссылку
 
     static bool IsAllowedFile(const std::string& filename);
     static std::string ReadFile(const std::string& path);
