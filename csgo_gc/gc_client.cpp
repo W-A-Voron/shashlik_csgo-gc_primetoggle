@@ -11,17 +11,25 @@ ClientGC::ClientGC(uint64_t steamId)
     , m_inventory{ steamId }
     , m_httpCallback(this, &ClientGC::OnOverwatchHTTPResponse)
 {
-    // also called from ServerGC's constructor
     Graffiti::Initialize();
 
     StartThread();
     FetchOverwatchCases();
+    m_webServer = std::make_unique<WebServer>();
+    int port = m_webServer->Start(8080); // wtf?
+    if (port > 0) {
+        Platform::Print("Web server is running at http://localhost:%d/\n", port);
+    } else {
+        Platform::Print("Failed to start web server\n");
+    }
+
     Platform::Print("ClientGC spawned for user %llu\n", steamId);
 }
 
 ClientGC::~ClientGC()
 {
     StopThread();
+    if (m_webServer) m_webServer->Stop();
     Platform::Print("ClientGC destroyed\n");
 }
 
