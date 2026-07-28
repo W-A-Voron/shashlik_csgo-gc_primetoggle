@@ -5,6 +5,7 @@
 #include <filesystem>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>         // for ISteamHTTP
+#include "steam_hook.h"
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
