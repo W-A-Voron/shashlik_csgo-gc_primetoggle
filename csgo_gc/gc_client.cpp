@@ -1223,10 +1223,8 @@ void ClientGC::ReloadInventory()
 
 void ClientGC::ReloadConfig()
 {
-    GetConfig().ReloadFromFile(); // ofc
-    SendInventoryUpdate(); // why tho?
-    SendRankUpdate(); // mb ranks changed.
-    SendMatchmakingHelloUpdate(); // hmm, this is needed
+    GetConfig().ReloadFromFile();
+    RecreateClientGC();
 }
 
 void ClientGC::ReloadPriceSheet()
