@@ -16,7 +16,7 @@ public:
     ClientGC(uint64_t steamId);
     ~ClientGC();
     void CheckFileReloads();
-
+    uint64_t GetSteamId() const { return m_steamId; }
     // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
     void OnOverwatchCaseStatus(GCMessageRead &messageRead);
@@ -104,5 +104,4 @@ private:
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
     std::unique_ptr<WebServer> m_webServer;
     void SendMatchmakingHelloUpdate();
-    uint64_t GetSteamId() const { return m_steamId; }
 };
