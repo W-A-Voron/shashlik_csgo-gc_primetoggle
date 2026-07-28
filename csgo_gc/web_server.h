@@ -18,6 +18,11 @@ public:
 
 private:
     void WorkerThread(int port);
+    void SetupRoutes();
+
+    static bool IsAllowedFile(const std::string& filename);
+    static std::string ReadFile(const std::string& path);
+    static bool WriteFile(const std::string& path, const std::string& content);
 
     std::unique_ptr<httplib::Server> m_server;
     std::thread m_thread;
