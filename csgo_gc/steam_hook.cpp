@@ -130,6 +130,19 @@ public:
 static GCWrapper<ClientGC, NetworkingClient> *s_clientGC;
 static GCWrapper<ServerGC, NetworkingServer> *s_serverGC;
 
+void RecreateClientGC()
+{
+    if (!s_clientGC)
+        return;
+
+    uint64_t steamId = s_clientGC->m_gc.GetSteamId();
+
+    delete s_clientGC;
+    s_clientGC = nullptr;
+
+    s_clientGC = new GCWrapper<ClientGC, NetworkingClient>{ SteamNetworkingMessages(), steamId };
+}
+
 template<size_t N>
 inline bool InterfaceMatches(const char *name, const char (&compare)[N])
 {
@@ -383,22 +396,6 @@ public:
     bool IsOverlayEnabled() override
     {
         return m_original->IsOverlayEnabled();
-    }
-    void RecreateClientGC()
-    {
-        if (!s_clientGC)
-            return;
-    
-        uint64_t steamId = s_clientGC->m_gc.GetSteamId();
-    
-        // Останавливаем и удаляем старый GC
-        // (деструктор ClientGC сам вызовет StopThread)
-        delete s_clientGC;
-        s_clientGC = nullptr;
-    
-        // Создаём новый GC с тем же SteamID
-        // Конструктор ClientGC автоматически запустит поток
-        s_clientGC = new GCWrapper<ClientGC, NetworkingClient>{ SteamNetworkingMessages(), steamId };
     }
     bool BOverlayNeedsPresent() override
     {
