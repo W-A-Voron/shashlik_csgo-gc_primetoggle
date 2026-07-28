@@ -103,4 +103,5 @@ private:
     // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
     std::unique_ptr<WebServer> m_webServer;
+    void SendMatchmakingHelloUpdate();
 };
