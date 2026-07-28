@@ -1,8 +1,11 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <string>
+
+namespace httplib { class Server; }
 
 class WebServer
 {
@@ -10,16 +13,13 @@ public:
     WebServer();
     ~WebServer();
 
-    // Запустить сервер, вернуть номер порта, на котором запустились (0 при ошибке)
     int Start(int startPort = 8080);
     void Stop();
 
-    bool IsRunning() const;
-
 private:
     void WorkerThread(int port);
-    void SetupRoutes();
 
+    std::unique_ptr<httplib::Server> m_server;
     std::thread m_thread;
     std::atomic<bool> m_running{ false };
     int m_port{ 0 };
