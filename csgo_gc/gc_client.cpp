@@ -230,6 +230,13 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     }
 }
 
+void ClientGC::SendMatchmakingHelloUpdate()
+{
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
+    BuildMatchmakingHello(mmHello);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
+}
+
 void ClientGC::ProcessGiftUse(uint64_t giftId)
 {
     const CSOEconItem *giftItem = m_inventory.GetItem(giftId);
@@ -1215,15 +1222,10 @@ void ClientGC::ReloadInventory()
 
 void ClientGC::ReloadConfig()
 {
-    // Reload configuration from file (e.g., config.txt)
-    GetConfig().ReloadFromFile();
-
-    // The client cache subscription includes the player's level,
-    // so we need to push an updated cache.
-    SendInventoryUpdate();
-
-    // Ranks may have changed as well, so send a rank update.
-    SendRankUpdate();
+    GetConfig().ReloadFromFile(); // ofc
+    SendInventoryUpdate(); // why tho?
+    SendRankUpdate(); // mb ranks changed.
+    SendMatchmakingHelloUpdate(); // hmm, this is needed
 }
 
 void ClientGC::ReloadPriceSheet()
