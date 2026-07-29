@@ -1216,21 +1216,6 @@ void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
     SendRankUpdate();
-
-    // Re‑send the full welcome to update all profile fields
-    CMsgCStrike15Welcome csWelcome;
-    BuildCSWelcome(csWelcome);
-
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
-    BuildMatchmakingHello(mmHello);
-
-    CMsgClientWelcome clientWelcome;
-    BuildClientWelcome(clientWelcome, csWelcome, mmHello);
-
-    SendMessageToGame(false, k_EMsgGCClientWelcome, clientWelcome);
-    // k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello is already embedded inside,
-    // so you may not need to send it separately (the original handshake did send both,
-    // but for updates the welcome alone suffices).
 }
 
 void ClientGC::ReloadPriceSheet()
