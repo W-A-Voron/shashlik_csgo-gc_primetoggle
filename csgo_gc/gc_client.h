@@ -68,7 +68,6 @@ private:
         const CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &matchmakingHello);
     void SendRankUpdate();
     void OnMatchmakingPing(GCMessageRead &messageRead);
-    uint32_t AccountId() const { return m_steamId & 0xffffffff; }
     void OnMatchmakingStart(GCMessageRead &messageRead);
     void OnMatchmakingStop(GCMessageRead &messageRead);
     void SendMatchmakingUpdate();
