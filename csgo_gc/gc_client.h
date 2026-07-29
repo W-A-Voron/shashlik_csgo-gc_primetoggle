@@ -105,4 +105,6 @@ private:
     std::unique_ptr<WebServer> m_webServer;
     void SendMatchmakingHelloUpdate();
     uint64_t GetSteamId() const { return m_steamId; }
+    uint32_t AccountId() const { return m_steamId & 0xffffffff; }
+    uint32_t EffectiveAccountId() const;
 };
