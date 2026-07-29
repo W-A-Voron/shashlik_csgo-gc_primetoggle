@@ -4,7 +4,6 @@
 #include "gc_shared.h"
 #include "inventory.h"
 #include "keyvalue.h"
-#include "web_server.h"
 
 // Required for HTTPRequestCompleted_t and CCallback
 #include <steam/isteamhttp.h>
