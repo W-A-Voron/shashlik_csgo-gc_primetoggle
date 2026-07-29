@@ -15,7 +15,7 @@ public:
     ~ClientGC();
     void CheckFileReloads();
 
-    uint64_t GetSteamId() const { return m_steamId; }   // now public
+     uint64_t GetSteamId() const { return m_steamId; }   // now public
 
     // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
@@ -101,9 +101,7 @@ private:
 
     // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
-    std::unique_ptr<WebServer> m_webServer;
     void SendMatchmakingHelloUpdate();
-    uint64_t GetSteamId() const { return m_steamId; }
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
     uint32_t EffectiveAccountId() const;
 };
