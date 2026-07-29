@@ -43,6 +43,7 @@ public:
     float GetRarityWeight(uint32_t rarity) const;
 
     std::vector<int> GetFriends() const { return m_friends; };
+	uint32_t GetFakeAccountId() const { return m_fakeAccountId; };
 
 private:
 	void Parse(const KeyValue& config);
@@ -85,6 +86,7 @@ private:
     };
 
     std::vector<int> m_friends{ 1140104601 };
+	uint32_t m_fakeAccountId{ 0 };
 };
 
 GCConfig &GetConfig();
