@@ -19,6 +19,7 @@
 
 "country"	"RU"
 "currency"	"3"
+"fake_account_id" "0" // do not use fake steamid
 
 // these are the same weights valve uses
 "rarity_weights"
