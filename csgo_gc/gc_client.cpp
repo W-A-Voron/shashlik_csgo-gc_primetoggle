@@ -4,8 +4,8 @@
 #include "keyvalue.h"
 #include <filesystem>
 #include "case_opening.h"
-#include <steam/isteamhttp.h>         // for ISteamHTTP
-#include "steam_hook.h"
+#include <steam/isteamhttp.h>
+#include "steam_hook.h"   // for RecreateClientGC()
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ GetConfig().GetFakeAccountId() ? GetConfig().GetFakeAccountId() : steamId }
@@ -15,13 +15,8 @@ ClientGC::ClientGC(uint64_t steamId)
     Graffiti::Initialize();
     StartThread();
     FetchOverwatchCases();
-    m_webServer = std::make_unique<WebServer>();
-    int port = m_webServer->Start(8080);
-    if (port > 0) {
-        Platform::Print("Web server is running at http://localhost:%d/\n", port);
-    } else {
-        Platform::Print("Failed to start web server\n");
-    }
+
+    // REMOVED: webserver creation and startup
 
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
 }
@@ -29,7 +24,7 @@ ClientGC::ClientGC(uint64_t steamId)
 ClientGC::~ClientGC()
 {
     StopThread();
-    if (m_webServer) m_webServer->Stop();
+    // REMOVED: webserver stop
     Platform::Print("ClientGC destroyed\n");
 }
 
