@@ -5,7 +5,6 @@
 #include "inventory.h"
 #include "keyvalue.h"
 
-// Required for HTTPRequestCompleted_t and CCallback
 #include <steam/isteamhttp.h>
 #include <steam/steam_api_common.h>
 
@@ -15,6 +14,8 @@ public:
     ClientGC(uint64_t steamId);
     ~ClientGC();
     void CheckFileReloads();
+
+    uint64_t GetSteamId() const { return m_steamId; }   // now public
 
     // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
