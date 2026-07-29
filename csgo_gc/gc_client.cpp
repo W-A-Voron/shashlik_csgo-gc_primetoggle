@@ -404,7 +404,7 @@ static void BuildCSWelcome(CMsgCStrike15Welcome &message)
 
 void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
 {
-    message.set_account_id(AccountId());
+    message.set_account_id(EffectiveAccountId());
 
     // this is the state of csgo matchmaking in 2024
     message.mutable_global_stats()->set_players_online(10000);
@@ -465,13 +465,13 @@ void ClientGC::SendRankUpdate()
     CMsgGCCStrike15_v2_ClientGCRankUpdate message;
 
     PlayerRankingInfo *rank = message.add_rankings();
-    rank->set_account_id(AccountId());
+    rank->set_account_id(EffectiveAccountId());
     rank->set_rank_id(GetConfig().CompetitiveRank());
     rank->set_wins(GetConfig().CompetitiveWins());
     rank->set_rank_type_id(RankTypeCompetitive);
 
     rank = message.add_rankings();
-    rank->set_account_id(AccountId());
+    rank->set_account_id(EffectiveAccountId());
     rank->set_rank_id(GetConfig().WingmanRank());
     rank->set_wins(GetConfig().WingmanWins());
     rank->set_rank_type_id(RankTypeWingman);
@@ -860,7 +860,7 @@ void ClientGC::PartySearch(GCMessageRead &messageRead)
     entry->set_apr(1);
     entry->set_ark(std::rand() % 18 + 1);
     entry->set_loc(30066);
-    entry->set_accountid(AccountId());
+    entry->set_accountid(EffectiveAccountId());
 
     for (uint32_t player_id : GetConfig().GetFriends())
     {
@@ -892,7 +892,7 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
     
     // adding self
     CMsgGCCStrike15_v2_Account_RequestCoPlays_Player *player = message.add_players();
-    player->set_accountid(AccountId());
+    player->set_accountid(EffectiveAccountId());
     player->set_online(true);
     player->set_rtcoplay(1771263169);
 
