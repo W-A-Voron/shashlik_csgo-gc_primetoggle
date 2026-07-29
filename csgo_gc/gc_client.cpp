@@ -16,15 +16,12 @@ ClientGC::ClientGC(uint64_t steamId)
     StartThread();
     FetchOverwatchCases();
 
-    // REMOVED: webserver creation and startup
-
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
 }
 
 ClientGC::~ClientGC()
 {
     StopThread();
-    // REMOVED: webserver stop
     Platform::Print("ClientGC destroyed\n");
 }
 
@@ -1218,7 +1215,7 @@ void ClientGC::ReloadInventory()
 void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
-    RecreateClientGC();
+    SendRankUpdate();
 }
 
 void ClientGC::ReloadPriceSheet()
