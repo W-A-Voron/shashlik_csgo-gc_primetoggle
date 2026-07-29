@@ -8,23 +8,22 @@
 #include "steam_hook.h"
 
 ClientGC::ClientGC(uint64_t steamId)
-    : m_steamId{ steamId }
-    , m_inventory{ steamId }
+    : m_steamId{ GetConfig().GetFakeAccountId() ? GetConfig().GetFakeAccountId() : steamId }
+    , m_inventory{ m_steamId }
     , m_httpCallback(this, &ClientGC::OnOverwatchHTTPResponse)
 {
     Graffiti::Initialize();
-
     StartThread();
     FetchOverwatchCases();
     m_webServer = std::make_unique<WebServer>();
-    int port = m_webServer->Start(8080); // wtf?
+    int port = m_webServer->Start(8080);
     if (port > 0) {
         Platform::Print("Web server is running at http://localhost:%d/\n", port);
     } else {
         Platform::Print("Failed to start web server\n");
     }
 
-    Platform::Print("ClientGC spawned for user %llu\n", steamId);
+    Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
 }
 
 ClientGC::~ClientGC()
