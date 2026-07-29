@@ -1456,3 +1456,9 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
     // Send asynchronously – we ignore the callback
     http->SendHTTPRequest(hRequest, nullptr);  // or &someCall if you care
 }
+
+uint32_t ClientGC::EffectiveAccountId() const
+{
+    uint32_t fake = GetConfig().GetFakeAccountId();
+    return fake != 0 ? fake : AccountId();
+}
