@@ -72,6 +72,7 @@ void GCConfig::Parse(const KeyValue& config)
         m_level = 0;
         m_xp = 0;
     }
+    m_fakeAccountId = config.GetNumber("fake_account_id", 0);
 }
 
 GCConfig::GCConfig()
