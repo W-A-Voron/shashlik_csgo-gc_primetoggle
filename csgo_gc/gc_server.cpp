@@ -114,6 +114,40 @@ static bool ValidateMessageOwnerSOID(GCMessageRead &messageRead, uint64_t steamI
     return true;
 }
 
+
+void ServerGC::SendConfirmToClient(uint64_t clientId, const PendingReservation& res)
+{
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm confirm;
+    confirm.set_token(res.token);
+    confirm.set_stamp(res.stamp);
+    confirm.set_exchange(res.exchange);
+
+    GCMessageWrite write{ 9114, confirm };   // k_EMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm
+    PostToHost(HostEvent::NetMessage, clientId, write.Data(), write.Size());
+    Platform::Print("ServerGC: sent confirm to client %llu (res %llu)\n", clientId, res.exchange);
+}
+
+void ServerGC::CheckPendingReservations()
+{
+    if (m_pendingReservations.empty())
+        return;
+
+    auto it = m_pendingReservations.begin();
+    while (it != m_pendingReservations.end())
+    {
+        uint64_t clientId = it->first;
+        if (m_networking.HasClient(clientId))
+        {
+            SendConfirmToClient(clientId, it->second);
+            it = m_pendingReservations.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
 void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead)
 {
     CMsgGCCStrike15_v2_MatchmakingServerReservationResponse response;
@@ -123,16 +157,24 @@ void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead
         return;
     }
 
-    Platform::Print("ServerGC: received reservation response for reservation %llu, map %s\n",
-                    response.reservationid(), response.map().c_str());
-    CMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm confirm;
-    confirm.set_token(0x12345678);
-    confirm.set_stamp(static_cast<uint32_t>(time(nullptr)));
-    confirm.set_exchange(response.reservationid());
-    
-    GCMessageWrite write{ 9114, confirm };   // k_EMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm
-    PostToHost(HostEvent::NetMessage, messageRead.JobId(), write.Data(), write.Size());
-    
+    uint64_t clientId = messageRead.JobId();   // client's Steam ID from the source job
+    Platform::Print("ServerGC: received reservation response for res %llu, map %s, client %llu\n",
+                    response.reservationid(), response.map().c_str(), clientId);
+
+    if (!m_networking.HasClient(clientId))
+    {
+        // Client not yet connected – store pending
+        PendingReservation pending;
+        pending.exchange = response.reservationid();
+        pending.token = 0x12345678;
+        pending.stamp = static_cast<uint32_t>(time(nullptr));
+        m_pendingReservations[clientId] = pending;
+        Platform::Print("ServerGC: pending reservation for client %llu\n", clientId);
+        return;
+    }
+
+    // Client already connected – send immediately
+    SendConfirmToClient(clientId, { response.reservationid(), 0x12345678, static_cast<uint32_t>(time(nullptr)) });
 }
 
 void ServerGC::HandleNetMessage(uint64_t steamId, const void *data, uint32_t size)
