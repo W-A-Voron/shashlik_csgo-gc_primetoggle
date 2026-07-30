@@ -168,6 +168,7 @@ public:
         {
             assert(!s_serverGC);
             s_serverGC = new GCWrapper<ServerGC, NetworkingServer>{ SteamGameServerNetworkingMessages() };
+            s_serverGC->m_gc.SetNetworking(&s_serverGC->m_networking);
         }
         else
         {
