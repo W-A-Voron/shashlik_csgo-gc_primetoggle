@@ -40,6 +40,7 @@ public:
     void ClientDisconnected(uint64_t steamId);
 
     void SendMessage(uint64_t steamId, const void *data, uint32_t size);
+    bool HasClient(uint64_t steamId) const { return m_clients.Has(steamId); }
 
 private:
     ISteamNetworkingMessages *const m_networkingMessages;
