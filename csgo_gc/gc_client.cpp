@@ -631,7 +631,7 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     // If we have sent a reservation, use our fixed server details
     if (m_matchmakingReservationSent) {
         response.mutable_res()->set_serverid(0x12345678);
-        response.mutable_res()->set_direct_udp_ip(inet_addr("192.168.0.14"));
+        response.mutable_res()->set_direct_udp_ip(0xC0A8000E);   // 192.168.0.14
         response.mutable_res()->set_direct_udp_port(27019);
         response.mutable_res()->set_reservationid(m_matchmakingReservationId);
         response.mutable_res()->set_server_address("192.168.0.14:27019");
