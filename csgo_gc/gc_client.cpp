@@ -75,12 +75,34 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 {
     m_isSearching = true;
     SendMatchmakingUpdate();
+
+    // NEW: record time when search started
+    m_matchmakingStartTime = std::chrono::steady_clock::now();
+    m_matchmakingReservationSent = false;
 }
 
 void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
 {
     m_isSearching = false;
+    m_matchmakingReservationSent = false;
     SendMatchmakingUpdate();
+}
+
+void ClientGC::SendMatchmakingReservation()
+{
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
+    reserve.set_serverid(0x12345678);  // any non‑zero value
+    reserve.set_direct_udp_ip(0xC0A8000E); // 192.168.0.14
+    reserve.set_direct_udp_port(27019);
+    reserve.set_reservationid(++m_matchmakingReservationId); // unique
+    reserve.set_map("de_dust2");
+    reserve.set_server_address("192.168.0.14:27019");
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *sub = reserve.mutable_reservation();
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
+    m_matchmakingReservationSent = true;
+
+    Platform::Print("Sent matchmaking reservation to %s:%d\n", "192.168.0.14", 27019);
 }
 
 void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
@@ -605,14 +627,24 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
     }
 
     CMsgGCCStrike15_v2_ClientRequestJoinServerData response = request;
-    response.mutable_res()->set_serverid(request.version());
-    response.mutable_res()->set_direct_udp_ip(request.server_ip());
-    response.mutable_res()->set_direct_udp_port(request.server_port());
-    response.mutable_res()->set_reservationid(GameServerCookieId);
 
-    char addressString[32];
-    AddressString(request.server_ip(), request.server_port(), addressString, sizeof(addressString));
-    response.mutable_res()->set_server_address(addressString);
+    // If we have sent a reservation, use our fixed server details
+    if (m_matchmakingReservationSent) {
+        response.mutable_res()->set_serverid(0x12345678);
+        response.mutable_res()->set_direct_udp_ip(inet_addr("192.168.0.14"));
+        response.mutable_res()->set_direct_udp_port(27019);
+        response.mutable_res()->set_reservationid(m_matchmakingReservationId);
+        response.mutable_res()->set_server_address("192.168.0.14:27019");
+    } else {
+        // Fallback to the original echo behaviour
+        response.mutable_res()->set_serverid(request.version());
+        response.mutable_res()->set_direct_udp_ip(request.server_ip());
+        response.mutable_res()->set_direct_udp_port(request.server_port());
+        response.mutable_res()->set_reservationid(GameServerCookieId);
+        char addressString[32];
+        AddressString(request.server_ip(), request.server_port(), addressString, sizeof(addressString));
+        response.mutable_res()->set_server_address(addressString);
+    }
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
 }
@@ -1202,6 +1234,14 @@ void ClientGC::CheckFileReloads()
             file.lastWrite = currentWrite;
             Platform::Print("%s changed – reloading...\n", file.path.filename().string().c_str());
             (this->*file.reloadFn)();
+        }
+    }
+     // --- Matchmaking timer ---
+    if (m_isSearching && !m_matchmakingReservationSent) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_matchmakingStartTime).count();
+        if (elapsed >= 3) {
+            SendMatchmakingReservation();
         }
     }
 }
