@@ -1994,6 +1994,7 @@ static void Hk_SteamGameServer_RunCallbacks()
                 message->Release();
             }
         }
+        s_serverGC->m_gc.CheckPendingReservations();
     }
 }
 
