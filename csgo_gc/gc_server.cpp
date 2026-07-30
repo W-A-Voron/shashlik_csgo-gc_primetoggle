@@ -6,6 +6,7 @@
 
 // yuck!! needed for CSteamID (construct full id from account id)
 #include "steam/steamclientpublic.h"
+#include "networking_server.h"
 
 ServerGC::ServerGC()
 {
