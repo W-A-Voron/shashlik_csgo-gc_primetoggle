@@ -107,4 +107,5 @@ private:
     std::chrono::steady_clock::time_point m_matchmakingStartTime;
     bool m_matchmakingReservationSent = false;
     uint64_t m_matchmakingReservationId = 0;
+    void SendMatchmakingReservation();
 };
