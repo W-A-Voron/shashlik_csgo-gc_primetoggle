@@ -69,7 +69,10 @@ void ServerGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
         case k_EMsgGC_IncrementKillCountAttribute:
             IncrementKillCountAttribute(messageRead);
             break;
-
+        case k_EMsgGCCStrike15_v2_MatchmakingServerReservationResponse:
+            OnMatchmakingServerReservationResponse(messageRead);
+            break;
+            
         default:
             Platform::Print("ServerGC::HandleMessage: unhandled protobuf message %s)\n",
                 MessageName(messageRead.TypeUnmasked()));
@@ -109,6 +112,27 @@ static bool ValidateMessageOwnerSOID(GCMessageRead &messageRead, uint64_t steamI
     }
 
     return true;
+}
+
+void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchmakingServerReservationResponse response;
+    if (!messageRead.ReadProtobuf(response))
+    {
+        Platform::Print("Failed to parse MatchmakingServerReservationResponse\n");
+        return;
+    }
+
+    Platform::Print("ServerGC: received reservation response for reservation %llu, map %s\n",
+                    response.reservationid(), response.map().c_str());
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm confirm;
+    confirm.set_token(0x12345678);
+    confirm.set_stamp(static_cast<uint32_t>(time(nullptr)));
+    confirm.set_exchange(response.reservationid());
+    
+    GCMessageWrite write{ k_EMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm, confirm };
+    PostToHost(HostEvent::NetMessage, messageRead.JobId(), write.Data(), write.Size());
+    
 }
 
 void ServerGC::HandleNetMessage(uint64_t steamId, const void *data, uint32_t size)
