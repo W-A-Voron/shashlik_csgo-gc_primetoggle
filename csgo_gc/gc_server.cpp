@@ -159,7 +159,7 @@ void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead
 
     // Extract account ID from the response.
     // Adjust the field name based on your protobuf definition.
-    uint32_t accountId = response.account_id();   // or response.steam_id()
+    uint32_t accountId = response.accountid();   // or response.steam_id()
     if (accountId == 0)
     {
         Platform::Print("ServerGC: reservation response missing account_id\n");
