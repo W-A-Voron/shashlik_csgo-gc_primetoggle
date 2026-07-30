@@ -104,4 +104,7 @@ private:
     void SendMatchmakingHelloUpdate();
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
     uint32_t EffectiveAccountId() const;
+    std::chrono::steady_clock::time_point m_matchmakingStartTime;
+    bool m_matchmakingReservationSent = false;
+    uint64_t m_matchmakingReservationId = 0;
 };
