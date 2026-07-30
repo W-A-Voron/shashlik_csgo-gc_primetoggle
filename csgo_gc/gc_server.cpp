@@ -158,22 +158,14 @@ void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead
         return;
     }
 
-    // Extract account ID from the response.
-    // Adjust the field name based on your protobuf definition.
-    uint32_t accountId = response.steam_id();   // or response.client_steam_id()
-    if (accountId == 0)
-    {
-        Platform::Print("ServerGC: reservation response missing account_id\n");
-        return;
-    }
-
-    // Construct full Steam ID (account type Individual, universe Public).
-    uint64_t clientId = CSteamID(accountId, k_EUniversePublic, k_EAccountTypeIndividual).ConvertToUint64();
+    // The response does not contain an account ID. Use the reservationid as a key.
+    // (A proper implementation would maintain a mapping from reservationid to client steamid.)
+    uint64_t clientId = response.reservationid();
 
     Platform::Print("ServerGC: received reservation response for res %llu, map %s, client %llu\n",
                     response.reservationid(), response.map().c_str(), clientId);
 
-    if (!m_networking.HasClient(clientId))
+    if (!m_networking->HasClient(clientId))   // pointer -> not .
     {
         PendingReservation pending;
         pending.exchange = response.reservationid();
@@ -186,7 +178,6 @@ void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead
 
     SendConfirmToClient(clientId, { response.reservationid(), 0x12345678, static_cast<uint32_t>(time(nullptr)) });
 }
-
 void ServerGC::HandleNetMessage(uint64_t steamId, const void *data, uint32_t size)
 {
     assert(CanHandleNetMessages());
