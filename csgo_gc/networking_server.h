@@ -19,7 +19,7 @@ public:
         return (m_set.erase(id) == 1);
     }
 
-    bool Has(uint64_t id)
+    bool Has(uint64_t id) const
     {
         return (m_set.find(id) != m_set.end());
     }
