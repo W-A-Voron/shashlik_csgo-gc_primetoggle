@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "networking_server.h"
 #include "gc_message.h"
+#include "gc_server.h"
 
 NetworkingServer::NetworkingServer(ISteamNetworkingMessages *networkingMessages)
     : m_networkingMessages{ networkingMessages }
