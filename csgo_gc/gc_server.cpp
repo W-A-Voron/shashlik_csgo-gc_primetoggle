@@ -137,7 +137,7 @@ void ServerGC::CheckPendingReservations()
     while (it != m_pendingReservations.end())
     {
         uint64_t clientId = it->first;
-        if (m_networking.HasClient(clientId))
+        if (!m_networking->HasClient(clientId))
         {
             SendConfirmToClient(clientId, it->second);
             it = m_pendingReservations.erase(it);
@@ -160,7 +160,7 @@ void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead
 
     // Extract account ID from the response.
     // Adjust the field name based on your protobuf definition.
-    uint32_t accountId = response.accountid();   // or response.steam_id()
+    uint32_t accountId = response.steam_id();   // or response.client_steam_id()
     if (accountId == 0)
     {
         Platform::Print("ServerGC: reservation response missing account_id\n");
