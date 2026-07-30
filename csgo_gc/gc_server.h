@@ -5,6 +5,7 @@
 
 class ServerGC final : public SharedGC
 {
+NetworkingServer* m_networking = nullptr;
 public:
     ServerGC();
     ~ServerGC();
@@ -14,6 +15,7 @@ public:
     // New public methods
     void SetNetworking(NetworkingServer* net) { m_networking = net; }
     void CheckPendingReservations();          // called from the main loop
+    void SetNetworking(NetworkingServer* net) { m_networking = net; }
 
 private:
     ServerGC();
