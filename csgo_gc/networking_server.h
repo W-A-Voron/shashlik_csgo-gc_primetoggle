@@ -27,12 +27,12 @@ public:
 private:
     std::unordered_set<uint64_t> m_set;
 };
-
+class ServerGC;
 class NetworkingServer
 {
 public:
     NetworkingServer(ISteamNetworkingMessages *networkingMessages);
-
+    void SetServerGC(ServerGC* gc) { m_serverGC = gc; }
     // caller need to call message->Release() because fuck you
     bool ReceiveMessage(SteamNetworkingMessage_t *&message);
 
@@ -43,6 +43,7 @@ public:
     bool HasClient(uint64_t steamId) const { return m_clients.Has(steamId); }
 
 private:
+    ServerGC* m_serverGC = nullptr;
     ISteamNetworkingMessages *const m_networkingMessages;
     ClientSet m_clients;
 
