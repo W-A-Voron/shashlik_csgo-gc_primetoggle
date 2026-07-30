@@ -22,4 +22,5 @@ private:
     void IncrementKillCountAttribute(GCMessageRead &messageRead);
 
     std::atomic_bool m_receivedHello{};
+    void OnMatchmakingServerReservationResponse(GCMessageRead &messageRead);
 };
