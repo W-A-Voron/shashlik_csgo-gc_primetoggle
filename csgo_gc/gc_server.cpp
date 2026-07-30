@@ -157,13 +157,23 @@ void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead
         return;
     }
 
-    uint64_t clientId = messageRead.JobId();   // client's Steam ID from the source job
+    // Extract account ID from the response.
+    // Adjust the field name based on your protobuf definition.
+    uint32_t accountId = response.account_id();   // or response.steam_id()
+    if (accountId == 0)
+    {
+        Platform::Print("ServerGC: reservation response missing account_id\n");
+        return;
+    }
+
+    // Construct full Steam ID (account type Individual, universe Public).
+    uint64_t clientId = CSteamID(accountId, k_EUniversePublic, k_EAccountTypeIndividual).ConvertToUint64();
+
     Platform::Print("ServerGC: received reservation response for res %llu, map %s, client %llu\n",
                     response.reservationid(), response.map().c_str(), clientId);
 
     if (!m_networking.HasClient(clientId))
     {
-        // Client not yet connected – store pending
         PendingReservation pending;
         pending.exchange = response.reservationid();
         pending.token = 0x12345678;
@@ -173,7 +183,6 @@ void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead
         return;
     }
 
-    // Client already connected – send immediately
     SendConfirmToClient(clientId, { response.reservationid(), 0x12345678, static_cast<uint32_t>(time(nullptr)) });
 }
 
