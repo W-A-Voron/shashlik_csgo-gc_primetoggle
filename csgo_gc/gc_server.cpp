@@ -130,7 +130,7 @@ void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead
     confirm.set_stamp(static_cast<uint32_t>(time(nullptr)));
     confirm.set_exchange(response.reservationid());
     
-    GCMessageWrite write{ k_EMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm, confirm };
+    GCMessageWrite write{ 9114, confirm };   // k_EMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm
     PostToHost(HostEvent::NetMessage, messageRead.JobId(), write.Data(), write.Size());
     
 }
