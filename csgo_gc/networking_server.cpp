@@ -76,9 +76,8 @@ void NetworkingServer::ClientConnected(uint64_t steamId, const void *ticket, uin
     GCMessageWrite messageWrite{ k_EMsgNetworkConnect };
     messageWrite.WriteUint32(ticketSize);
     messageWrite.WriteData(ticket, ticketSize);
-    if (s_serverGC)
-    {
-        s_serverGC->m_gc.CheckPendingReservations();
+    if (m_serverGC) {
+        m_serverGC->CheckPendingReservations();
     }
     // FIXME: this gets sent when the client is connecting to the server, it's not uncommon for
     // the connection to time out, in which case the player's socache never gets to the server
