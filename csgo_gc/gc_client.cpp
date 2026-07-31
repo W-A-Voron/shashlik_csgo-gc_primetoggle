@@ -1240,9 +1240,7 @@ void ClientGC::CheckFileReloads()
     if (m_isSearching && !m_matchmakingReservationSent) {
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_matchmakingStartTime).count();
-        if (elapsed >= 3) {
-            SendMatchmakingReservation();
-        }
+        if (false) {}
     }
 }
 
