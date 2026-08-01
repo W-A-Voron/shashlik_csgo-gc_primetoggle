@@ -1084,7 +1084,7 @@ bool Inventory::NameItem(uint64_t nameTagId,
 
     notification.add_item_id(it->second.id());
     notification.set_request(k_EGCItemCustomizationNotification_NameItem);
-
+    WriteToFile();
     return true;
 }
 
