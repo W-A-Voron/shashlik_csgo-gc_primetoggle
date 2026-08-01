@@ -88,7 +88,6 @@ private:
     };
 
     std::vector<int> m_friends{ 1140104601 };
-	uint32_t m_competitiveCooldownSeconds{ 0 };
 };
 
 GCConfig &GetConfig();
