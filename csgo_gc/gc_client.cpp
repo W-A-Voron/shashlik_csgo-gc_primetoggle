@@ -47,6 +47,16 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
     }
 }
 
+void ClientGC::SendCompetitiveCooldown(uint32_t seconds)
+{
+    CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
+    penalty.set_account_id(EffectiveAccountId());
+    penalty.set_reason(0); // 0 = competitive cooldown
+    penalty.set_seconds(seconds);
+    penalty.set_communication_cooldown(false);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
+}
+
 void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
 {
     // Просто отправляем актуальное состояние (в зависимости от флага)
