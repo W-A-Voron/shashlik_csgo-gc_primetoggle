@@ -53,6 +53,7 @@ void GCConfig::Parse(const KeyValue& config)
 
     m_vacBanned = config.GetNumber("vac_banned", m_vacBanned);
     m_hasPrime = config.GetNumber("has_prime", 1);
+    m_competitiveCooldownSeconds = config.GetNumber("competitive_cooldown_seconds", m_competitiveCooldownSeconds);
     m_commendedFriendly = config.GetNumber("cmd_friendly", m_commendedFriendly);
     m_commendedTeaching = config.GetNumber("cmd_teaching", m_commendedTeaching);
     m_commendedLeader = config.GetNumber("cmd_leader", m_commendedLeader);
