@@ -22,11 +22,11 @@ While it's still possible to connect CS:GO to CS2's GC by spoofing the version n
 - Majors & operations passes (passes.txt)
 - Prime toggle (`has_prime` in config.txt)
 - Recent teammates & Party search (configurable via `friends` block in config.txt)
-- Competitive cooldown emulation (`competitive_cooldown_seconds` in config.txt)
+- Competitive cooldown emulation (`competitive_cooldown_seconds` in config.txt) (buggy!!!!!!!!!!!)
 - Overwatch case support (fetches cases from remote JSON)
 - In-game store
 - Works without full Steam API emulation
-- Full Windows, Linux and macOS support
+- Full Windows support
 - Functional lobbies
 - Dedicated server support
 - Functional server browser (only shows csgo_gc servers)
@@ -44,10 +44,9 @@ While it's still possible to connect CS:GO to CS2's GC by spoofing the version n
 - Download [CS:GO from Steam](steam://install/4465480)
 - Download the latest release for your platform from the [releases page](https://github.com/sasha190409/shashlik_csgo-gc_primetoggle/releases/latest) (or the prime-toggle fork releases)
 - Navigate to the game's installation directory
-- Back up your existing launcher executables as they'll be overwritten (i.e. csgo.exe, srcds.exe, csgo_linux64, etc.)
+- Back up your existing launcher executables as they'll be overwritten (i.e. csgo.exe, srcds.exe)
 - Extract the contents of the downloaded archive to your game directory, replace the executables when prompted
 - Launch the game. If you get the annoying VAC message box, launch the game with the -steam argument
-- macOS users: The release binaries are not notarized, so if you're using them, you'll have to deal with that somehow
 
 ## Inventory editing
 Use [this](https://github.com/dricotec/csgo_gc_inventory-editor/releases/latest)
