@@ -423,7 +423,7 @@ bool Inventory::EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId, CM
         defaultEquip.set_slot_id(slotId);
 
         AddToMultipleObjects(update, SOTypeDefaultEquippedDefinitionInstanceClient, defaultEquip);
-
+        WriteToFile();
         return true;
     }
     else
@@ -448,7 +448,7 @@ bool Inventory::EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId, CM
         equippedState->set_new_slot(slotId);
 
         AddToMultipleObjects(update, item);
-
+        WriteToFile();
         return true;
     }
 }
@@ -463,6 +463,7 @@ bool Inventory::RemoveItem(uint64_t itemId, CMsgSOSingleObject &response)
     }
 
     DestroyItem(it, response);
+    WriteToFile();
     return true;
 }
 
@@ -498,6 +499,7 @@ bool Inventory::UseItem(uint64_t itemId,
         // set notification
         notification.add_item_id(unsealed.id());
         notification.set_request(k_EGCItemCustomizationNotification_GraffitiUnseal);
+        WriteToFile();
         return true;
     }
     // uses for passes
@@ -518,6 +520,7 @@ bool Inventory::UseItem(uint64_t itemId,
         {
             DestroyItem(it, destroy);
         }
+        WriteToFile();
         return true;
     }
 
@@ -569,7 +572,7 @@ bool Inventory::UnlockCrate(uint64_t crateId,
             DestroyItem(key, destroyKey);
         }
     }
-
+    WriteToFile();
     return true;
 }
 
@@ -798,7 +801,7 @@ bool Inventory::SetItemPositions(
 
         AddToMultipleObjects(update, item);
     }
-
+    WriteToFile();
     return true;
 }
 
@@ -884,7 +887,7 @@ bool Inventory::ApplySticker(const CMsgApplySticker &message,
     // notification, if any
     notification.add_item_id(item->id());
     notification.set_request(k_EGCItemCustomizationNotification_ApplySticker);
-
+    WriteToFile();
     return true;
 }
 
@@ -985,7 +988,7 @@ bool Inventory::ScrapeSticker(const CMsgApplySticker &message,
 
         ToSingleObject(update, item);
     }
-
+    WriteToFile();
     return true;
 }
 
@@ -1016,6 +1019,7 @@ bool Inventory::IncrementKillCountAttribute(uint64_t itemId, uint32_t amount, CM
     if (incremented)
     {
         ToSingleObject(update, item);
+        WriteToFile();
         return true;
     }
 
@@ -1050,6 +1054,7 @@ bool Inventory::NameItem(uint64_t nameTagId,
                 ToSingleObject(update, it->second);
                 notification.add_item_id(it->second.id());
                 notification.set_request(k_EGCItemCustomizationNotification_NameItem);
+                WriteToFile();
                 return true;
             }
         }
@@ -1110,7 +1115,7 @@ bool Inventory::NameBaseItem(uint64_t nameTagId,
 
     notification.add_item_id(item.id()); // mikkotodo def index???
     notification.set_request(k_EGCItemCustomizationNotification_NameBaseItem);
-
+    WriteToFile();
     return true;
 }
 
@@ -1142,7 +1147,7 @@ bool Inventory::RemoveItemName(uint64_t itemId,
 
         ToSingleObject(update, it->second);
     }
-
+    WriteToFile();
     return true;
 }
 
@@ -1241,7 +1246,7 @@ bool Inventory::CasketItemAdd(uint64_t casketId,
 
     notification.set_request(k_EGCItemCustomizationNotification_CasketAdded);
     notification.add_item_id(casketId);
-
+    WriteToFile();
     return true;
 }
 
@@ -1359,7 +1364,7 @@ bool Inventory::StatTrakSwap(uint64_t toolId,
     notification.add_item_id(item1Id);
     notification.add_item_id(item2Id);
     notification.set_request(k_EGCItemCustomizationNotification_StatTrakSwap);
-
+    WriteToFile();
     return true;
 }
 
@@ -1369,7 +1374,7 @@ uint64_t Inventory::PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObje
 
     CMsgSOSingleObject &single = update.emplace_back();
     ToSingleObject(single, item);
-
+    WriteToFile();
     return item.id();
 }
 
@@ -1394,7 +1399,7 @@ bool Inventory::UnequipItem(uint64_t itemId, CMsgSOMultipleObjects &update)
     item.clear_equipped_state();
 
     AddToMultipleObjects(update, item);
-
+    WriteToFile();
     return true;
 }
 
