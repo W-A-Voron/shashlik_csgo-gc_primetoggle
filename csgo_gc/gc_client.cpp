@@ -8,7 +8,7 @@
 #include "steam_hook.h"   // for RecreateClientGC()
 
 ClientGC::ClientGC(uint64_t steamId)
-    : m_steamId{ GetConfig().GetFakeAccountId() ? GetConfig().GetFakeAccountId() : steamId }
+    : m_steamId{ steamId }
     , m_inventory{ m_steamId }
     , m_httpCallback(this, &ClientGC::OnOverwatchHTTPResponse)
 {
@@ -1488,6 +1488,5 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
 
 uint32_t ClientGC::EffectiveAccountId() const
 {
-    uint32_t fake = GetConfig().GetFakeAccountId();
-    return fake != 0 ? fake : AccountId();
+    return AccountId(); // TODO: remove this function (im too lazy)
 }
