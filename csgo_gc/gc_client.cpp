@@ -47,11 +47,22 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
     }
 }
 
-void ClientGC::SendCompetitiveCooldown(uint32_t seconds)
+void ClientGC::SendCompetitiveCooldown()
 {
+    uint32_t seconds = 0;
+    if (m_isCooldownActive) {
+        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+            m_cooldownEndTime - std::chrono::steady_clock::now()).count();
+        seconds = (remaining > 0) ? static_cast<uint32_t>(remaining) : 0;
+        if (seconds == 0) {
+            // expired during the check
+            m_isCooldownActive = false;
+        }
+    }
+
     CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
     penalty.set_account_id(EffectiveAccountId());
-    penalty.set_reason(0); // 0 = competitive cooldown
+    penalty.set_reason(0); // competitive cooldown
     penalty.set_seconds(seconds);
     penalty.set_communication_cooldown(false);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
@@ -87,9 +98,11 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
     if (cooldown > 0)
     {
         m_isSearching = false;
-        SendMatchmakingUpdate(); // Stop the searching animation
+        m_isCooldownActive = true;
+        m_cooldownEndTime = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown);
 
-        SendCompetitiveCooldown(cooldown);
+        SendMatchmakingUpdate(); // stops the searching animation
+        SendCompetitiveCooldown(); // sends initial cooldown
 
         CMsgGCCStrike15_v2_GC2ClientTextMsg textMsg;
         textMsg.set_text(0);
@@ -274,6 +287,18 @@ void ClientGC::SendMatchmakingHelloUpdate()
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
     BuildMatchmakingHello(mmHello);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
+}
+
+void ClientGC::UpdateCooldown()
+{
+    if (!m_isCooldownActive)
+        return;
+    auto now = std::chrono::steady_clock::now();
+    if (now >= m_cooldownEndTime) {
+        m_isCooldownActive = false;
+        SendCompetitiveCooldown(); // sends 0
+        Platform::Print("Competitive cooldown expired.\n");
+    }
 }
 
 void ClientGC::ProcessGiftUse(uint64_t giftId)
@@ -554,7 +579,7 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
     
     uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
     if (cooldown > 0) {
-        SendCompetitiveCooldown(cooldown);
+        SendCompetitiveCooldown();
     }
 }
 
@@ -1272,6 +1297,7 @@ void ClientGC::CheckFileReloads()
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_matchmakingStartTime).count();
         if (false) {}
     }
+    UpdateCooldown();
 }
 
 void ClientGC::ReloadInventory()
