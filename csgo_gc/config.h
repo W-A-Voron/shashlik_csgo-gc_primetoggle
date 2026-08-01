@@ -66,6 +66,7 @@ private:
 
     bool m_vacBanned{ false };
 	bool m_hasPrime{ true };
+	uint32_t m_competitiveCooldownSeconds{ 0 };
     int m_commendedFriendly{ 0 };
     int m_commendedTeaching{ 0 };
     int m_commendedLeader{ 0 };
