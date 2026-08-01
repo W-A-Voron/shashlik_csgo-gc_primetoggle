@@ -11,6 +11,7 @@
 
 "vac_banned"	"0"
 "has_prime" "1"
+"competitive_cooldown_seconds" "0" // in seconds, 0 = no cooldown
 "cmd_friendly"	"666"
 "cmd_teaching"	"777"
 "cmd_leader"	"888"
