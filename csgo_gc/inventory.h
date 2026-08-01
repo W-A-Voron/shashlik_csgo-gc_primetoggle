@@ -98,6 +98,7 @@ public:
     // on failure returns 0 and does nothing
     uint64_t PurchaseItem(uint32_t defIndex, std::vector<CMsgSOSingleObject> &update);
     void ReloadFromFile();
+    void WriteToFile() const;
 private:
     mutable std::mutex m_mutex;
     uint32_t AccountId() const;
