@@ -1293,7 +1293,7 @@ bool Inventory::CasketItemRemove(uint64_t casketId,
 
     notification.set_request(k_EGCItemCustomizationNotification_CasketRemoved);
     notification.add_item_id(casketId);
-
+    WriteToFile();
     return true;
 }
 
@@ -1455,6 +1455,7 @@ void Inventory::UnequipItem(uint32_t classId, uint32_t slotId, CMsgSOMultipleObj
             it++;
         }
     }
+    WriteToFile();
 }
 
 void Inventory::DestroyItem(ItemMap::iterator iterator, CMsgSOSingleObject &message)
