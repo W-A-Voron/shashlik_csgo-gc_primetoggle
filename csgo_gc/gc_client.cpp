@@ -73,18 +73,45 @@ void ClientGC::SendMatchmakingUpdate()
 
 void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 {
+    // --- FAKE COOLDOWN CHECK START ---
+    uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
+    if (cooldown > 0)
+    {
+        // 1. Stop the search immediately so the button goes back to "Play"
+        m_isSearching = false;
+        SendMatchmakingUpdate(); // Tell the UI we aren't searching anymore
+
+        // 2. Send a scary text message to the client (like real CS:GO)
+        CMsgGCCStrike15_v2_GC2ClientTextMsg textMsg;
+        textMsg.set_text(0); // 0 usually means "Show in chat/console"
+
+        // Format the message: "Your competitive cooldown will expire in X minutes..."
+        // You can change this to any string you want.
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "Your competitive cooldown will expire in %u seconds.", cooldown);
+        textMsg.set_text_str(buffer);
+
+        SendMessageToGame(false, k_EMsgGCCStrike15_v2_GC2ClientTextMsg, textMsg);
+
+        // 3. (Optional) Send the actual official "Penalty" notification.
+        // This sometimes shows the red timer on the Play button if the protobuf supports it.
+        // Try uncommenting this if your protobuf has CMsgGCCStrike15_v2_ServerNotificationForUserPenalty
+        CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
+        penalty.set_reason(0); // 0 = Competitive?
+        penalty.set_seconds_remaining(cooldown);
+        SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
+        
+
+        Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
+        return; // STOP HERE, don't start searching
+    }
     m_isSearching = true;
     SendMatchmakingUpdate();
-
-    // NEW: record time when search started
-    m_matchmakingStartTime = std::chrono::steady_clock::now();
-    m_matchmakingReservationSent = false;
 }
 
 void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
 {
     m_isSearching = false;
-    m_matchmakingReservationSent = false;
     SendMatchmakingUpdate();
 }
 
