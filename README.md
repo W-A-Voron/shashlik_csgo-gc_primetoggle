@@ -1,4 +1,4 @@
-# csgo_gc
+# csgo_gc (prime-toggle fork)
 
 > [!WARNING]
 > This project is incomplete and not ready for general use.
@@ -18,10 +18,12 @@ While it's still possible to connect CS:GO to CS2's GC by spoofing the version n
 - Stickers and patches
 - Name tags
 - StatTrak swaps
-- Storage Units
+- Storage Units (caskets)
 - Majors & operations passes (passes.txt)
-- Recent teammates (configurable on config.txt, friends block)
-- Party search (configurable on config.txt, friends block)
+- Prime toggle (`has_prime` in config.txt)
+- Recent teammates & Party search (configurable via `friends` block in config.txt)
+- Competitive cooldown emulation (`competitive_cooldown_seconds` in config.txt)
+- Overwatch case support (fetches cases from remote JSON)
 - In-game store
 - Works without full Steam API emulation
 - Full Windows, Linux and macOS support
@@ -40,7 +42,7 @@ While it's still possible to connect CS:GO to CS2's GC by spoofing the version n
 
 ## Installation
 - Download [CS:GO from Steam](steam://install/4465480)
-- Download the latest release for your platform from the [releases page](https://github.com/mikkokko/csgo_gc/releases/latest)
+- Download the latest release for your platform from the [releases page](https://github.com/sasha190409/shashlik_csgo-gc_primetoggle/releases/latest) (or the prime-toggle fork releases)
 - Navigate to the game's installation directory
 - Back up your existing launcher executables as they'll be overwritten (i.e. csgo.exe, srcds.exe, csgo_linux64, etc.)
 - Extract the contents of the downloaded archive to your game directory, replace the executables when prompted
@@ -48,7 +50,6 @@ While it's still possible to connect CS:GO to CS2's GC by spoofing the version n
 - macOS users: The release binaries are not notarized, so if you're using them, you'll have to deal with that somehow
 
 ## Inventory editing
-~~Since there is no graphical editor yet, you'll have to edit `csgo_gc/inventory.txt` manually. There is a guide made by someone else [here](https://gist.github.com/dricotec/1ae3deb06c42012970c00df914348e76).~~
 Use [this](https://github.com/dricotec/csgo_gc_inventory-editor/releases/latest)
 
 ## Building
@@ -67,8 +68,8 @@ This project is licensed under the 2-Clause BSD License. See [LICENSE.md](LICENS
 ## Credits
 * **Mikko Kokko** - Author
 * **Theeto** - Code reused from the predecessor project, unusual loot lists
-* **Shashlik226** - For making most of the features work (passes, statrek swaps, etc)
-* **sasha190409** (me) - For prime toggle.
+* **Shashlik226** - For making most of the features work (passes, stattrak swaps, etc)
+* **sasha190409** - Prime toggle & Overwatch integration
 
 ## Third party dependencies
 - [Crypto++](https://github.com/weidai11/cryptopp) ([Boost Software License](https://github.com/weidai11/cryptopp/blob/master/License.txt))
