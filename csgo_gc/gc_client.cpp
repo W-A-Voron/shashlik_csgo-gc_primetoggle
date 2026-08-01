@@ -103,13 +103,6 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 
         SendMatchmakingUpdate(); // stops the searching animation
         SendCompetitiveCooldown(); // sends initial cooldown
-
-        CMsgGCCStrike15_v2_GC2ClientTextMsg textMsg;
-        char buffer[128];
-        snprintf(buffer, sizeof(buffer), "Your competitive cooldown will expire in %u seconds.", cooldown);
-        textMsg.set_msg(buffer);
-        SendMessageToGame(false, k_EMsgGCCStrike15_v2_GC2ClientTextMsg, textMsg);
-
         Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
         return;
     }
