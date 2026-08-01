@@ -108,7 +108,8 @@ private:
     bool m_matchmakingReservationSent = false;
     uint64_t m_matchmakingReservationId = 0;
     void SendMatchmakingReservation();
+    bool m_isCooldownActive{ false };
     std::chrono::steady_clock::time_point m_cooldownEndTime;
-    bool m_isCooldownActive{false};
+    void SendCompetitiveCooldown();
     void UpdateCooldown();
 };
