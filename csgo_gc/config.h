@@ -31,6 +31,8 @@ public:
 
     bool VacBanned() const { return m_vacBanned; }
 	bool HasPrime() const { return m_hasPrime; }
+	uint32_t CompetitiveCooldownSeconds() const { return m_competitiveCooldownSeconds; }
+
     int CommendedFriendly() const { return m_commendedFriendly; }
     int CommendedTeaching() const { return m_commendedTeaching; }
     int CommendedLeader() const { return m_commendedLeader; }
@@ -85,6 +87,7 @@ private:
     };
 
     std::vector<int> m_friends{ 1140104601 };
+	uint32_t m_competitiveCooldownSeconds{ 0 };
 };
 
 GCConfig &GetConfig();
