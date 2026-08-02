@@ -995,9 +995,9 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
     Platform::Print("Requested accountId: %u\n", message.account_id());
 
     CMsgGCCStrike15_v2_PlayersProfile response;
-
     response.set_request_id(message.account_id());
 
+    // --- Добавляем базовый профиль для запрошенного аккаунта ---
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello* mmHello = response.add_account_profiles();
     mmHello->set_account_id(message.account_id());
     mmHello->mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
@@ -1006,6 +1006,38 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
     mmHello->set_player_level(GetConfig().Level());
     mmHello->set_player_cur_xp(GetConfig().Xp());
 
+    // --- Получаем список друзей из конфига (уже есть в GCConfig) ---
+    std::vector<int> friends = GetConfig().GetFriends();
+
+    // Добавляем запрошенный аккаунт в список для рангов, если его там нет
+    bool requestedInFriends = false;
+    for (int id : friends) {
+        if (static_cast<uint32_t>(id) == message.account_id()) {
+            requestedInFriends = true;
+            break;
+        }
+    }
+    if (!requestedInFriends) {
+        friends.push_back(static_cast<int>(message.account_id()));
+    }
+
+    // --- Генератор случайных чисел (локальный, можно использовать m_random, если есть) ---
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<uint32_t> rankDist(1, 15);          // ранг Danger Zone от 1 до 15
+    std::uniform_int_distribution<uint32_t> winsDist(0, 500);         // победы от 0 до 500 (можно настроить)
+
+    // --- Для каждого друга добавляем запись о ранге Danger Zone ---
+    for (int friendId : friends) {
+        PlayerRankingInfo* rankInfo = response.add_rankings();
+        rankInfo->set_account_id(static_cast<uint32_t>(friendId));
+        rankInfo->set_rank_type_id(RankTypeDangerZone);  // 10
+        rankInfo->set_rank_id(rankDist(gen));            // случайный ранг 1..15
+        rankInfo->set_wins(winsDist(gen));               // случайное количество побед
+        // Можно также добавить rank_season_id и другие поля, но для отображения достаточно этих
+    }
+
+    // --- Отправляем ответ клиенту ---
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayersProfile, response);
 }
 
