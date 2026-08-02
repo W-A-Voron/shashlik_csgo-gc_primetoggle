@@ -1021,26 +1021,13 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
         friends.push_back(static_cast<int>(message.account_id()));
     }
 
-    // --- Генератор случайных чисел (локальный, можно использовать m_random, если есть) ---
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint32_t> rankDist(1, 15);          // ранг Danger Zone от 1 до 15
-    std::uniform_int_distribution<uint32_t> winsDist(0, 500);         // победы от 0 до 500 (можно настроить)
-
-    // --- Для каждого друга добавляем запись о ранге Danger Zone ---
-    for (int friendId : friends) {
-        PlayerRankingInfo* rankInfo = response.add_rankings();
-        rankInfo->set_account_id(static_cast<uint32_t>(friendId));
-        rankInfo->set_rank_type_id(RankTypeDangerZone);  // 10
-        rankInfo->set_rank_id(rankDist(gen));            // случайный ранг 1..15
-        rankInfo->set_wins(winsDist(gen));               // случайное количество побед
-        // Можно также добавить rank_season_id и другие поля, но для отображения достаточно этих
-    }
+    // Примечание: CMsgGCCStrike15_v2_PlayersProfile не содержит поля rankings,
+    // поэтому добавление рангов для друзей удалено. Если потребуется,
+    // необходимо использовать другое сообщение или расширить протокол.
 
     // --- Отправляем ответ клиенту ---
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayersProfile, response);
 }
-
 void ClientGC::CasketItemLoadContents(GCMessageRead &messageRead)
 {
     CMsgCasketItem message;
