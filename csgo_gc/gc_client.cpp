@@ -5,7 +5,7 @@
 #include <filesystem>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
-#include "steam_hook.h"   // for RecreateClientGC()
+#include "steam_hook.h"
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
@@ -55,14 +55,13 @@ void ClientGC::SendCompetitiveCooldown()
             m_cooldownEndTime - std::chrono::steady_clock::now()).count();
         seconds = (remaining > 0) ? static_cast<uint32_t>(remaining) : 0;
         if (seconds == 0) {
-            // expired during the check
             m_isCooldownActive = false;
         }
     }
 
     CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
     penalty.set_account_id(EffectiveAccountId());
-    penalty.set_reason(0); // competitive cooldown
+    penalty.set_reason(0);
     penalty.set_seconds(seconds);
     penalty.set_communication_cooldown(false);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
@@ -70,7 +69,6 @@ void ClientGC::SendCompetitiveCooldown()
 
 void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
 {
-    // Просто отправляем актуальное состояние (в зависимости от флага)
     SendMatchmakingUpdate();
 }
 
@@ -81,11 +79,10 @@ void ClientGC::SendMatchmakingUpdate()
 
     auto* stats = update.mutable_global_stats();
     stats->set_players_searching(1000);
-    stats->set_search_time_avg(60);   // keep top-level for fallback
+    stats->set_search_time_avg(60);
 
-    // Add per-game-type statistics (choose the appropriate game_type)
     auto* detail = stats->add_search_statistics();
-    detail->set_game_type(0); // or whatever game type you're emulating (e.g., 6 for competitive)
+    detail->set_game_type(0);
     detail->set_search_time_avg(60);
     detail->set_players_searching(1000);
 
@@ -101,13 +98,12 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
         m_isCooldownActive = true;
         m_cooldownEndTime = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown);
 
-        SendMatchmakingUpdate(); // stops the searching animation
-        SendCompetitiveCooldown(); // sends initial cooldown
+        SendMatchmakingUpdate();
+        SendCompetitiveCooldown();
         Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
         return;
     }
 
-    // Original code continues...
     m_isSearching = true;
     SendMatchmakingUpdate();
 }
@@ -121,13 +117,12 @@ void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
 void ClientGC::SendMatchmakingReservation()
 {
     CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
-    reserve.set_serverid(0x12345678);  // any non‑zero value
-    reserve.set_direct_udp_ip(0xC0A8000E); // 192.168.0.14
+    reserve.set_serverid(0x12345678);
+    reserve.set_direct_udp_ip(0xC0A8000E);
     reserve.set_direct_udp_port(27019);
-    reserve.set_reservationid(++m_matchmakingReservationId); // unique
+    reserve.set_reservationid(++m_matchmakingReservationId);
     reserve.set_map("de_dust2");
     reserve.set_server_address("192.168.0.14:27019");
-    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *sub = reserve.mutable_reservation();
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
     m_matchmakingReservationSent = true;
@@ -148,93 +143,28 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     {
         switch (messageRead.TypeUnmasked())
         {
-        case k_EMsgGCClientHello:
-            OnClientHello(messageRead);
-            break;
-
-        case k_EMsgGCAdjustItemEquippedState:
-            AdjustItemEquippedState(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_ClientPlayerDecalSign:
-            ClientPlayerDecalSign(messageRead);
-            break;
-
-        case k_EMsgGCUseItemRequest:
-            UseItemRequest(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_ClientRequestJoinServerData:
-            ClientRequestJoinServerData(messageRead);
-            break;
-
-        case k_EMsgGCSetItemPositions:
-            SetItemPositions(messageRead);
-            break;
-
-        case k_EMsgGCApplySticker:
-            ApplySticker(messageRead);
-            break;
-
-        case k_EMsgGCStoreGetUserData:
-            StoreGetUserData(messageRead);
-            break;
-
-        case k_EMsgGCStorePurchaseInit:
-            StorePurchaseInit(messageRead);
-            break;
-
-        case k_EMsgGCStorePurchaseFinalize:
-            StorePurchaseFinalize(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_Party_Search:
-            PartySearch(messageRead);
-            break;
-            
-        case k_EMsgGCCStrike15_v2_Account_RequestCoPlays:
-            RequestCoPlays(messageRead);
-            break;
-        
-        case k_EMsgGCCStrike15_v2_ClientRequestPlayersProfile:
-            ClientRequestPlayersProfile(messageRead);
-            break;
-
-        case k_EMsgGCCasketItemLoadContents:
-            CasketItemLoadContents(messageRead);
-            break;
-
-        case k_EMsgGCCasketItemAdd:
-            CasketItemAdd(messageRead);
-            break;
-
-        case k_EMsgGCCasketItemExtract:
-            CasketItemExtract(messageRead);
-            break;
-
-        case k_EMsgGCStatTrakSwap:
-            StatTrakSwap(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_MatchmakingClient2ServerPing:
-            OnMatchmakingPing(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_MatchmakingStart:
-            OnMatchmakingStart(messageRead);
-            break;
-        
-        case k_EMsgGCCStrike15_v2_MatchmakingStop:
-            OnMatchmakingStop(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseStatus:
-            OnOverwatchCaseStatus(messageRead);
-            break;
-        
-        case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate:
-            OnOverwatchCaseUpdate(messageRead);
-            break;
+        case k_EMsgGCClientHello: OnClientHello(messageRead); break;
+        case k_EMsgGCAdjustItemEquippedState: AdjustItemEquippedState(messageRead); break;
+        case k_EMsgGCCStrike15_v2_ClientPlayerDecalSign: ClientPlayerDecalSign(messageRead); break;
+        case k_EMsgGCUseItemRequest: UseItemRequest(messageRead); break;
+        case k_EMsgGCCStrike15_v2_ClientRequestJoinServerData: ClientRequestJoinServerData(messageRead); break;
+        case k_EMsgGCSetItemPositions: SetItemPositions(messageRead); break;
+        case k_EMsgGCApplySticker: ApplySticker(messageRead); break;
+        case k_EMsgGCStoreGetUserData: StoreGetUserData(messageRead); break;
+        case k_EMsgGCStorePurchaseInit: StorePurchaseInit(messageRead); break;
+        case k_EMsgGCStorePurchaseFinalize: StorePurchaseFinalize(messageRead); break;
+        case k_EMsgGCCStrike15_v2_Party_Search: PartySearch(messageRead); break;
+        case k_EMsgGCCStrike15_v2_Account_RequestCoPlays: RequestCoPlays(messageRead); break;
+        case k_EMsgGCCStrike15_v2_ClientRequestPlayersProfile: ClientRequestPlayersProfile(messageRead); break;
+        case k_EMsgGCCasketItemLoadContents: CasketItemLoadContents(messageRead); break;
+        case k_EMsgGCCasketItemAdd: CasketItemAdd(messageRead); break;
+        case k_EMsgGCCasketItemExtract: CasketItemExtract(messageRead); break;
+        case k_EMsgGCStatTrakSwap: StatTrakSwap(messageRead); break;
+        case k_EMsgGCCStrike15_v2_MatchmakingClient2ServerPing: OnMatchmakingPing(messageRead); break;
+        case k_EMsgGCCStrike15_v2_MatchmakingStart: OnMatchmakingStart(messageRead); break;
+        case k_EMsgGCCStrike15_v2_MatchmakingStop: OnMatchmakingStop(messageRead); break;
+        case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseStatus: OnOverwatchCaseStatus(messageRead); break;
+        case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate: OnOverwatchCaseUpdate(messageRead); break;
 
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled protobuf message %s\n",
@@ -246,25 +176,11 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     {
         switch (messageRead.TypeUnmasked())
         {
-        case k_EMsgGCDelete:
-            DeleteItem(messageRead);
-            break;
-
-        case k_EMsgGCUnlockCrate:
-            UnlockCrate(messageRead);
-            break;
-
-        case k_EMsgGCNameItem:
-            NameItem(messageRead);
-            break;
-
-        case k_EMsgGCNameBaseItem:
-            NameBaseItem(messageRead);
-            break;
-
-        case k_EMsgGCRemoveItemName:
-            RemoveItemName(messageRead);
-            break;
+        case k_EMsgGCDelete: DeleteItem(messageRead); break;
+        case k_EMsgGCUnlockCrate: UnlockCrate(messageRead); break;
+        case k_EMsgGCNameItem: NameItem(messageRead); break;
+        case k_EMsgGCNameBaseItem: NameBaseItem(messageRead); break;
+        case k_EMsgGCRemoveItemName: RemoveItemName(messageRead); break;
 
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled struct message %s\n",
@@ -288,7 +204,7 @@ void ClientGC::UpdateCooldown()
     auto now = std::chrono::steady_clock::now();
     if (now >= m_cooldownEndTime) {
         m_isCooldownActive = false;
-        SendCompetitiveCooldown(); // sends 0
+        SendCompetitiveCooldown();
         Platform::Print("Competitive cooldown expired.\n");
     }
 }
@@ -304,7 +220,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
 
     uint32_t defIndex = giftItem->def_index();
 
-    // Determine number of recipients (items to give)
     int numItems = 1;
     if (defIndex == 1210)
         numItems = 1;
@@ -317,7 +232,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         return;
     }
 
-    // Get the "set supply crate series" attribute value via Inventory's ItemSchema
     uint32_t series = 0;
     uint32_t attrDef = m_inventory.GetItemSchema().GetAttributeDefIndex("set supply crate series");
     if (attrDef)
@@ -345,13 +259,11 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         return;
     }
 
-    // Prepare updates
     CMsgSOMultipleObjects updateMultiple;
     CMsgSOSingleObject destroy;
     CMsgGCItemCustomizationNotification notification;
-    notification.set_request(k_EGCItemCustomizationNotification_Gift); // from protobuf enum
+    notification.set_request(k_EGCItemCustomizationNotification_Gift);
 
-    // Use Inventory's schema and random generator
     CaseOpening caseOpening(m_inventory.GetItemSchema(), m_inventory.GetRandom());
 
     for (int i = 0; i < numItems; i++)
@@ -363,20 +275,16 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
             continue;
         }
 
-        // Create actual item in inventory
         CSOEconItem &createdItem = m_inventory.CreateItem(newItemProto);
-        // AddToMultipleObjects is now public and accepts the SOTypeId
         m_inventory.AddToMultipleObjects(updateMultiple, SOTypeItem, createdItem);
         notification.add_item_id(createdItem.id());
     }
 
-    // Destroy the gift if configured
     if (GetConfig().DestroyUsedItems())
     {
         m_inventory.RemoveItem(giftId, destroy);
     }
 
-    // Send updates to game server and client
     if (updateMultiple.objects_modified_size() > 0)
     {
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, updateMultiple);
@@ -395,10 +303,8 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
     }
 }
 
-
 void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 {
-    // pass 0 as type so it gets parsed from the message
     GCMessageRead messageRead{ 0, data, size };
     if (!messageRead.IsValid())
     {
@@ -449,7 +355,6 @@ constexpr uint32_t MakeAddress(uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v
 
 static void BuildCSWelcome(CMsgCStrike15Welcome &message)
 {
-    // mikkotodo cleanup dox
     message.set_store_item_hash(136617352);
     message.set_timeplayedconsecutively(0);
     message.set_time_first_played(1329845773);
@@ -461,7 +366,6 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
 {
     message.set_account_id(EffectiveAccountId());
 
-    // this is the state of csgo matchmaking in 2024
     message.mutable_global_stats()->set_players_online(10000);
     message.mutable_global_stats()->set_servers_online(10000);
     message.mutable_global_stats()->set_players_searching(1000);
@@ -475,21 +379,18 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     stats->set_search_time_avg(60);
 
     auto* detail = stats->add_search_statistics();
-    detail->set_game_type(6); // competitive, see below
+    detail->set_game_type(6);
     detail->set_search_time_avg(60);
     detail->set_players_searching(1000);
 
-    // don't write search_statistics
-
     message.mutable_global_stats()->set_main_post_url("");
 
-    // bullshit
     message.mutable_global_stats()->set_required_appid_version(13857);
-    message.mutable_global_stats()->set_pricesheet_version(1680057676); // mikkotodo revisit
+    message.mutable_global_stats()->set_pricesheet_version(1680057676);
     message.mutable_global_stats()->set_twitch_streams_version(2);
     message.mutable_global_stats()->set_active_tournament_eventid(20);
     message.mutable_global_stats()->set_active_survey_id(0);
-    message.mutable_global_stats()->set_required_appid_version2(13862); // csgo s2
+    message.mutable_global_stats()->set_required_appid_version2(13862);
 
     message.set_vac_banned(GetConfig().VacBanned());
     message.mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
@@ -502,8 +403,7 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
 void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
     const CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &matchmakingHello)
 {
-    // mikkotodo remove dox
-    message.set_version(0); // this is accurate
+    message.set_version(0);
     message.set_game_data(csWelcome.SerializeAsString());
     m_inventory.BuildCacheSubscription(*message.add_outofdate_subscribed_caches(), GetConfig().Level(), false);
     message.mutable_location()->set_latitude(65.0133006f);
@@ -549,7 +449,6 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
         return;
     }
 
-    // we don't care about anything in this message, just reply
     CMsgCStrike15Welcome csWelcome;
     BuildCSWelcome(csWelcome);
 
@@ -560,13 +459,7 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
     BuildClientWelcome(clientWelcome, csWelcome, mmHello);
 
     SendMessageToGame(false, k_EMsgGCClientWelcome, clientWelcome);
-
-    // the real gc sends this a bit later when it has more info to put on it
-    // however we have everything at our fingertips so send it right away
-    // mikkotodo is this even needed? k_EMsgGCClientWelcome should have it all already
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
-
-    // send all ranks here as well, it's a bit back and forth with real gc
     SendRankUpdate();
     
     uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
@@ -587,12 +480,10 @@ void ClientGC::AdjustItemEquippedState(GCMessageRead &messageRead)
     CMsgSOMultipleObjects update;
     if (!m_inventory.EquipItem(message.item_id(), message.new_class(), message.new_slot(), update))
     {
-        // no change
         assert(false);
         return;
     }
 
-    // let the gameserver know, too
     SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
 }
 
@@ -625,21 +516,17 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
 
     uint64_t itemId = message.item_id();
 
-    // Check if it's a gift
     const CSOEconItem *giftItem = m_inventory.GetItem(itemId);
     if (giftItem)
     {
         uint32_t defIndex = giftItem->def_index();
-        if (defIndex == 1210 || 
-            defIndex == 1211 || 
-            defIndex == 1215)
+        if (defIndex == 1210 || defIndex == 1211 || defIndex == 1215)
         {
             ProcessGiftUse(itemId);
             return;
         }
     }
 
-    // Normal use handling
     CMsgSOSingleObject destroy;
     CMsgSOMultipleObjects updateMultiple;
     CMsgGCItemCustomizationNotification notification;
@@ -648,7 +535,6 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
     {
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, updateMultiple);
-
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 }
@@ -675,15 +561,13 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
 
     CMsgGCCStrike15_v2_ClientRequestJoinServerData response = request;
 
-    // If we have sent a reservation, use our fixed server details
     if (m_matchmakingReservationSent) {
         response.mutable_res()->set_serverid(0x12345678);
-        response.mutable_res()->set_direct_udp_ip(0xC0A8000E);   // 192.168.0.14
+        response.mutable_res()->set_direct_udp_ip(0xC0A8000E);
         response.mutable_res()->set_direct_udp_port(27019);
         response.mutable_res()->set_reservationid(m_matchmakingReservationId);
         response.mutable_res()->set_server_address("192.168.0.14:27019");
     } else {
-        // Fallback to the original echo behaviour
         response.mutable_res()->set_serverid(request.version());
         response.mutable_res()->set_direct_udp_ip(request.server_ip());
         response.mutable_res()->set_direct_udp_port(request.server_port());
@@ -713,7 +597,6 @@ void ClientGC::SetItemPositions(GCMessageRead &messageRead)
     {
         for (const CMsgItemAcknowledged &acknowledgement : acknowledgements)
         {
-            // send these to the server only
             GCMessageWrite messageWrite{ k_EMsgGCItemAcknowledged, acknowledgement };
             PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
         }
@@ -764,24 +647,20 @@ void ClientGC::ApplySticker(GCMessageRead &messageRead)
 
     if (!message.sticker_item_id())
     {
-        // scrape
         if (m_inventory.ScrapeSticker(message, update, destroy, notification))
         {
             if (destroy.has_type_id())
             {
-                // destroying a default item
                 SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
             }
 
             if (update.has_type_id())
             {
-                // if the item got removed (handled above), nothing gets updated
                 SendMessageToGame(true, k_ESOMsg_Update, update);
             }
 
             if (notification.has_request())
             {
-                // might get a k_EGCItemCustomizationNotification_RemoveSticker
                 SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
             }
         }
@@ -794,7 +673,6 @@ void ClientGC::ApplySticker(GCMessageRead &messageRead)
     {
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
         SendMessageToGame(true, k_ESOMsg_Update, update);
-
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
     else
@@ -812,42 +690,26 @@ void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
         return;
     }
 
-    // If price sheet hasn't been loaded yet, load it now.
     if (m_priceSheet.IsEmpty())
     {
-        void ClientGC::ReloadPriceSheet()
-{
-    m_priceSheet.Clear();
-    
-    // Все предметы стоят 184 рубля
-    
-    // Основные defIndex'ы предметов CS:GO
-    const uint32_t allItemDefs[] = {
-        // Оружие
-        1,2,3,4,5,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,
-        // Кейсы
-        6,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,49,50,51,52,53,54,55,56,
-        // Ключи
-        472,473,474,475,476,477,478,479,480,481,482,483,484,485,486,487,495,496,497,
-        // Наклейки
-        1000,1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1011,1012,1013,
-        1900,1901,1902,1903,1904,1905,
-        // Граффити
-        1500,1501,1502,
-        // Музыкальные киты
-        1600,1601,1602,
-        // Нашивки
-        1700,1701,1702,
-        // Патчи
-        1800,1801,1802
-    };
-    
-    for (uint32_t defIndex : allItemDefs) {
-        m_priceSheet.AddNumber(std::to_string(defIndex), 184);
+        ReloadPriceSheet();
+        if (m_priceSheet.IsEmpty())
+        {
+            Platform::Print("StoreGetUserData: price sheet is empty, cannot respond\n");
+            return;
+        }
     }
-    
-    Platform::Print("ReloadPriceSheet: created price sheet with %zu items, all priced at 184\n", 
-                    sizeof(allItemDefs) / sizeof(allItemDefs[0]));
+
+    std::string binaryString;
+    binaryString.reserve(1 << 17);
+    m_priceSheet.BinaryWriteToString(binaryString);
+
+    CMsgStoreGetUserDataResponse response;
+    response.set_result(1);
+    response.set_price_sheet_version(1729);
+    *response.mutable_price_sheet() = std::move(binaryString);
+
+    SendMessageToGame(false, k_EMsgGCStoreGetUserDataResponse, response);
 }
 
 void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
@@ -859,14 +721,12 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
         return;
     }
 
-    // value doesn't matter
     uint64_t transactionId = Random{}.Integer<uint64_t>();
 
     assert(!m_transactionId);
     m_transactionId = transactionId;
-    m_transactionItemIds.reserve(message.line_items_size()); // rough approx
+    m_transactionItemIds.reserve(message.line_items_size());
 
-    // inventory update response
     std::vector<CMsgSOSingleObject> inventoryUpdate;
 
     for (const auto &item : message.line_items())
@@ -885,24 +745,22 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
         }
     }
 
-    char url[128]; // url doesn't matter, but it needs to be set
+    char url[128];
     snprintf(url, sizeof(url), "https://checkout.steampowered.com/checkout/approvetxn/%llu/?returnurl=steam", transactionId);
 
     CMsgGCStorePurchaseInitResponse response;
-    response.set_result(1); // success
+    response.set_result(1);
     response.set_txn_id(transactionId);
     response.set_url(url);
     response.mutable_item_ids()->Assign(m_transactionItemIds.begin(), m_transactionItemIds.end());
 
     SendMessageToGame(false, k_EMsgGCStorePurchaseInitResponse, response, messageRead.JobId());
 
-    // FIXME: why would the server care???
     for (auto &newItem : inventoryUpdate)
     {
         SendMessageToGame(true, k_ESOMsg_Create, newItem);
     }
 
-    // this will run the steam callback
     PostToHost(HostEvent::MicroTransactionResponse, 0, nullptr, 0);
 }
 
@@ -918,11 +776,10 @@ void ClientGC::StorePurchaseFinalize(GCMessageRead &messageRead)
     assert(m_transactionId);
 
     CMsgGCStorePurchaseFinalizeResponse response;
-    response.set_result(1); // success
+    response.set_result(1);
     response.mutable_item_ids()->Assign(m_transactionItemIds.begin(), m_transactionItemIds.end());
     SendMessageToGame(false, k_EMsgGCStorePurchaseFinalizeResponse, response, messageRead.JobId());
 
-    // done with this one
     m_transactionId = 0;
 }
 
@@ -937,7 +794,6 @@ void ClientGC::PartySearch(GCMessageRead &messageRead)
 
     CMsgGCCStrike15_v2_Party_SearchResults response;
 
-    // adding self
     CMsgGCCStrike15_v2_Party_SearchResults::Entry *entry = response.add_entries();
     entry->set_id(AccountId());
     entry->set_grp(3);
@@ -949,7 +805,6 @@ void ClientGC::PartySearch(GCMessageRead &messageRead)
 
     for (uint32_t player_id : GetConfig().GetFriends())
     {
-        // dont make self duplicate
         if (AccountId() == player_id)
             continue;
 
@@ -975,7 +830,6 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
         return;
     }
     
-    // adding self
     CMsgGCCStrike15_v2_Account_RequestCoPlays_Player *player = message.add_players();
     player->set_accountid(EffectiveAccountId());
     player->set_online(true);
@@ -983,7 +837,6 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
 
     for (uint32_t player_id : GetConfig().GetFriends())
     {
-        // dont make self duplicate
         if (AccountId() == player_id)
             continue;
 
@@ -1012,7 +865,6 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
     CMsgGCCStrike15_v2_PlayersProfile response;
     response.set_request_id(message.account_id());
 
-    // --- Добавляем базовый профиль для запрошенного аккаунта ---
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello* mmHello = response.add_account_profiles();
     mmHello->set_account_id(message.account_id());
     mmHello->mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
@@ -1021,10 +873,8 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
     mmHello->set_player_level(GetConfig().Level());
     mmHello->set_player_cur_xp(GetConfig().Xp());
 
-    // --- Получаем список друзей из конфига (уже есть в GCConfig) ---
     std::vector<int> friends = GetConfig().GetFriends();
 
-    // Добавляем запрошенный аккаунт в список для рангов, если его там нет
     bool requestedInFriends = false;
     for (int id : friends) {
         if (static_cast<uint32_t>(id) == message.account_id()) {
@@ -1036,13 +886,9 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
         friends.push_back(static_cast<int>(message.account_id()));
     }
 
-    // Примечание: CMsgGCCStrike15_v2_PlayersProfile не содержит поля rankings,
-    // поэтому добавление рангов для друзей удалено. Если потребуется,
-    // необходимо использовать другое сообщение или расширить протокол.
-
-    // --- Отправляем ответ клиенту ---
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayersProfile, response);
 }
+
 void ClientGC::CasketItemLoadContents(GCMessageRead &messageRead)
 {
     CMsgCasketItem message;
@@ -1052,7 +898,6 @@ void ClientGC::CasketItemLoadContents(GCMessageRead &messageRead)
         return;
     }
 
-    // wha
     CMsgGCItemCustomizationNotification notification;
     notification.set_request(k_EGCItemCustomizationNotification_CasketContents);
     notification.add_item_id(message.casket_item_id());
@@ -1110,7 +955,6 @@ void ClientGC::StatTrakSwap(GCMessageRead &messageRead)
     CMsgSOSingleObject destroy, updateItem1, updateItem2;
     CMsgGCItemCustomizationNotification notification;
 
-    // ugh
     if (m_inventory.StatTrakSwap(
             message.tool_item_id(),
             message.item_1_item_id(),
@@ -1123,14 +967,12 @@ void ClientGC::StatTrakSwap(GCMessageRead &messageRead)
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
         SendMessageToGame(true, k_ESOMsg_Update, updateItem1);
         SendMessageToGame(true, k_ESOMsg_Update, updateItem2);
-
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 }
 
 void ClientGC::DeleteItem(GCMessageRead &messageRead)
 {
-    // there is data after this, but i don't know what it is
     uint64_t itemId = messageRead.ReadUint64();
     if (!messageRead.IsValid())
     {
@@ -1141,7 +983,6 @@ void ClientGC::DeleteItem(GCMessageRead &messageRead)
     CMsgSOSingleObject destroyed;
     if (m_inventory.RemoveItem(itemId, destroyed))
     {
-        // mikkotodo what does the server want to know
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyed);
     }
     else
@@ -1173,11 +1014,9 @@ void ClientGC::UnlockCrate(GCMessageRead &messageRead)
             newItem,
             notification))
     {
-        // mikkotodo what does the server want to know
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyCrate);
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyKey);
         SendMessageToGame(true, k_ESOMsg_Create, newItem);
-
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
     else
@@ -1190,7 +1029,7 @@ void ClientGC::NameItem(GCMessageRead &messageRead)
 {
     uint64_t nameTagId = messageRead.ReadUint64();
     uint64_t itemId = messageRead.ReadUint64();
-    messageRead.ReadData(1); // skip the sentinel
+    messageRead.ReadData(1);
     std::string_view name = messageRead.ReadString();
 
     if (!messageRead.IsValid())
@@ -1205,7 +1044,6 @@ void ClientGC::NameItem(GCMessageRead &messageRead)
     {
         SendMessageToGame(true, k_ESOMsg_Update, update);
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
     else
@@ -1218,7 +1056,7 @@ void ClientGC::NameBaseItem(GCMessageRead &messageRead)
 {
     uint64_t nameTagId = messageRead.ReadUint64();
     uint32_t defIndex = messageRead.ReadUint32();
-    messageRead.ReadData(1); // skip the sentinel
+    messageRead.ReadData(1);
     std::string_view name = messageRead.ReadString();
 
     if (!messageRead.IsValid())
@@ -1233,7 +1071,6 @@ void ClientGC::NameBaseItem(GCMessageRead &messageRead)
     {
         SendMessageToGame(true, k_ESOMsg_Create, create);
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
     else
@@ -1280,49 +1117,23 @@ void ClientGC::SendInventoryUpdate()
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
 }
 
-
 void ClientGC::CheckFileReloads()
 {
     namespace fs = std::filesystem;
 
-    struct WatchedFile {
-        fs::path path;
-        fs::file_time_type& lastWrite;
-        void (ClientGC::*reloadFn)();
-    };
-
-    // Static variables to remember the last modification time of each file
     static fs::file_time_type lastInventoryWrite = fs::file_time_type::min();
-    static fs::file_time_type lastConfigWrite = fs::file_time_type::min();
-    static fs::file_time_type lastPriceSheetWrite = fs::file_time_type::min();
-    static fs::file_time_type lastPassesWrite = fs::file_time_type::min();
-    static fs::file_time_type lastUnusualLootWrite = fs::file_time_type::min();
 
-    WatchedFile files[] = {
-        { "csgo_gc/inventory.txt",         lastInventoryWrite,   &ClientGC::ReloadInventory      },
-        { "csgo_gc/config.txt",            lastConfigWrite,      &ClientGC::ReloadConfig         },
-        { "csgo_gc/price_sheet.txt",       lastPriceSheetWrite,  &ClientGC::ReloadPriceSheet     },
-        { "csgo_gc/passes.txt",            lastPassesWrite,      &ClientGC::ReloadPasses         },
-        { "csgo_gc/unusual_loot_lists.txt",lastUnusualLootWrite, &ClientGC::ReloadUnusualLootLists }
-    };
-
-    for (auto& file : files) {
-        if (!fs::exists(file.path))
-            continue;
-
-        auto currentWrite = fs::last_write_time(file.path);
-        if (currentWrite != file.lastWrite) {
-            file.lastWrite = currentWrite;
-            Platform::Print("%s changed – reloading...\n", file.path.filename().string().c_str());
-            (this->*file.reloadFn)();
+    if (fs::exists("csgo_gc/inventory.txt"))
+    {
+        auto currentWrite = fs::last_write_time("csgo_gc/inventory.txt");
+        if (currentWrite != lastInventoryWrite)
+        {
+            lastInventoryWrite = currentWrite;
+            Platform::Print("inventory.txt changed – reloading...\n");
+            ReloadInventory();
         }
     }
-     // --- Matchmaking timer ---
-    if (m_isSearching && !m_matchmakingReservationSent) {
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_matchmakingStartTime).count();
-        if (false) {}
-    }
+
     UpdateCooldown();
 }
 
@@ -1332,23 +1143,44 @@ void ClientGC::ReloadInventory()
     SendInventoryUpdate();
 }
 
+void ClientGC::ReloadPriceSheet()
+{
+    m_priceSheet.Clear();
+    
+    // Все предметы стоят 184 рубля
+    
+    const uint32_t allItemDefs[] = {
+        // Оружие
+        1,2,3,4,5,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,
+        // Кейсы
+        6,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,49,50,51,52,53,54,55,56,
+        // Ключи
+        472,473,474,475,476,477,478,479,480,481,482,483,484,485,486,487,495,496,497,
+        // Наклейки
+        1000,1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1011,1012,1013,
+        1900,1901,1902,1903,1904,1905,
+        // Граффити
+        1500,1501,1502,
+        // Музыкальные киты
+        1600,1601,1602,
+        // Нашивки
+        1700,1701,1702,
+        // Патчи
+        1800,1801,1802
+    };
+    
+    for (uint32_t defIndex : allItemDefs) {
+        m_priceSheet.AddNumber(std::to_string(defIndex), 184);
+    }
+    
+    Platform::Print("ReloadPriceSheet: created price sheet with %zu items, all priced at 184\n", 
+                    sizeof(allItemDefs) / sizeof(allItemDefs[0]));
+}
+
 void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
     SendRankUpdate();
-}
-
-void ClientGC::ReloadPriceSheet()
-{
-    m_priceSheet.Clear();
-    if (!m_priceSheet.ParseFromFile("csgo_gc/price_sheet.txt"))
-    {
-        Platform::Print("ReloadPriceSheet: failed to load price_sheet.txt\n");
-        return;
-    }
-    // Optionally store the version from the file if needed.
-    // m_priceSheetVersion = ...; // if you track a version number
-    Platform::Print("ReloadPriceSheet: price sheet reloaded\n");
 }
 
 void ClientGC::ReloadPasses()
@@ -1373,7 +1205,6 @@ void ClientGC::ReloadUnusualLootLists()
     Platform::Print("ReloadUnusualLootLists: unusual loot lists reloaded\n");
 }
 
-
 void ClientGC::FetchOverwatchCases()
 {
     ISteamHTTP *http = SteamHTTP();
@@ -1384,12 +1215,11 @@ void ClientGC::FetchOverwatchCases()
 
     http->SetHTTPRequestHeaderValue(hRequest, "User-Agent", "csgo_gc/1.0");
 
-    // Send the request – the callback will be triggered via m_httpCallback
     SteamAPICall_t hCall;
     if (!http->SendHTTPRequest(hRequest, &hCall))
         Platform::Print("Overwatch: failed to send request\n");
-    // No need to store hCall; the callback system handles it.
 }
+
 void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
 {
     if (!pCallback->m_bRequestSuccessful || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
@@ -1406,50 +1236,41 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
     if (!http->GetHTTPResponseBodySize(pCallback->m_hRequest, &bodySize) || bodySize == 0)
         return;
 
-    std::vector<uint8_t> body(bodySize + 1, 0);  // use uint8_t
+    std::vector<uint8_t> body(bodySize + 1, 0);
     if (!http->GetHTTPResponseBodyData(pCallback->m_hRequest, body.data(), bodySize))
         return;
 
     std::string json(reinterpret_cast<char*>(body.data()), bodySize);
     Platform::Print("Overwatch: received JSON: %s\n", json.c_str());
 
-
-    // Parse JSON: {"case1":"STEAM_0:1:562118442", ...}
-    // Simple manual parser for this specific format.
     std::vector<uint32_t> suspects;
-    size_t pos = 0;
-    // Find first '{'
     size_t start = json.find('{');
     if (start == std::string::npos) return;
-    // Find last '}'
     size_t end = json.rfind('}');
     if (end == std::string::npos || end <= start) return;
     std::string content = json.substr(start + 1, end - start - 1);
 
-    // Split by ','
     size_t comma = 0;
     while (comma != std::string::npos)
     {
         size_t next = content.find(',', comma);
         std::string pair = content.substr(comma, (next == std::string::npos) ? std::string::npos : next - comma);
-        // Trim spaces
         pair.erase(0, pair.find_first_not_of(" \t\n\r"));
         pair.erase(pair.find_last_not_of(" \t\n\r") + 1);
         if (pair.empty()) break;
 
-        // Find colon
         size_t colon = pair.find(':');
         if (colon == std::string::npos) continue;
         std::string key = pair.substr(0, colon);
         std::string value = pair.substr(colon + 1);
-        // Trim quotes
+        
         auto trimQuotes = [](std::string& s) {
             if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
                 s = s.substr(1, s.size() - 2);
         };
         trimQuotes(key);
         trimQuotes(value);
-        // key is "caseN", value is "STEAM_0:..."
+        
         if (key.find("case") == 0 && !value.empty())
         {
             uint32_t accId = SteamIDStringToAccountId(value);
@@ -1460,7 +1281,6 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
         comma = (next == std::string::npos) ? std::string::npos : next + 1;
     }
 
-    // Store in member
     {
         std::lock_guard<std::mutex> lock(m_overwatchMutex);
         m_overwatchSuspects = std::move(suspects);
@@ -1468,6 +1288,7 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
         Platform::Print("Overwatch: loaded %zu suspects\n", m_overwatchSuspects.size());
     }
 }
+
 uint32_t ClientGC::SteamIDStringToAccountId(const std::string &str)
 {
     unsigned int x, y;
@@ -1509,7 +1330,7 @@ void ClientGC::OnOverwatchCaseStatus(GCMessageRead& messageRead)
         return;
     }
 
-    if (msg.caseid() == 0)   // client requests a new case
+    if (msg.caseid() == 0)
     {
         std::lock_guard<std::mutex> lock(m_overwatchMutex);
         if (m_overwatchSuspects.empty())
@@ -1539,7 +1360,6 @@ void ClientGC::OnOverwatchCaseUpdate(GCMessageRead& messageRead)
     Platform::Print("Overwatch: verdict for case %llu, suspect %u, reason %u\n",
                     msg.caseid(), msg.suspectid(), msg.reason());
 
-    // Send to Cloudflare Worker
     SendVerdictToCloudflare(msg);
 }
 
@@ -1560,15 +1380,13 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
 
     http->SetHTTPRequestHeaderValue(hRequest, "Content-Type", "application/json");
 
-    // Convert to non-const uint8_t*
     std::vector<uint8_t> postData(json.begin(), json.end());
     http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
 
-    // Send asynchronously – we ignore the callback
-    http->SendHTTPRequest(hRequest, nullptr);  // or &someCall if you care
+    http->SendHTTPRequest(hRequest, nullptr);
 }
 
 uint32_t ClientGC::EffectiveAccountId() const
 {
-    return AccountId(); // TODO: remove this function (im too lazy)
+    return AccountId();
 }
