@@ -815,44 +815,26 @@ void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
     // If price sheet hasn't been loaded yet, load it now.
     if (m_priceSheet.IsEmpty())
     {
-        void ClientGC::ReloadPriceSheet()
-{
-    m_priceSheet.Clear();
-    
-    // Создаём price_sheet в коде, а не читаем из файла
-    // Все предметы стоят 184 рубля
-    
-    // База данных предметов CS:GO (основные defIndex'ы)
-    // Добавляем все возможные предметы, которые могут быть в магазине
-    const uint32_t allItemDefs[] = {
-        // Оружие
-        1,2,3,4,5,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,
-        // Кейсы
-        6,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,49,50,51,52,53,54,55,56,
-        // Ключи
-        472,473,474,475,476,477,478,479,480,481,482,483,484,485,486,487,495,496,497,
-        // Наклейки (популярные)
-        1000,1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1011,1012,1013,
-        // Новые наклейки
-        1900,1901,1902,1903,1904,1905,
-        // Граффити
-        1500,1501,1502,
-        // Музыкальные киты
-        1600,1601,1602,
-        // Нашивки
-        1700,1701,1702,
-        // Патчи
-        1800,1801,1802
-    };
-    
-    // Добавляем все предметы с ценой 184
-    for (uint32_t defIndex : allItemDefs) {
-        m_priceSheet.AddNumber(std::to_string(defIndex), 184);
+        ReloadPriceSheet();
+        if (m_priceSheet.IsEmpty())
+        {
+            Platform::Print("StoreGetUserData: price sheet is empty, cannot respond\n");
+            return;
+        }
     }
-    
-    Platform::Print("ReloadPriceSheet: created price sheet with %zu items, all priced at 184\n", 
-                    sizeof(allItemDefs) / sizeof(allItemDefs[0]));
+
+    std::string binaryString;
+    binaryString.reserve(1 << 17);
+    m_priceSheet.BinaryWriteToString(binaryString);
+
+    CMsgStoreGetUserDataResponse response;
+    response.set_result(1);
+    response.set_price_sheet_version(1729); // or store a version from the file
+    *response.mutable_price_sheet() = std::move(binaryString);
+
+    SendMessageToGame(false, k_EMsgGCStoreGetUserDataResponse, response);
 }
+
 void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
 {
     CMsgGCStorePurchaseInit message;
