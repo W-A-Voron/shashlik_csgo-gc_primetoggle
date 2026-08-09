@@ -1,0 +1,31 @@
+name: Build csgo_gc
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: windows-2019
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup CMake
+      uses: lukka/get-cmake@latest
+    
+    - name: Build project
+      run: |
+        cmake -A Win32 -B build
+        cmake --build build --config Release
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: csgo_gc-windows
+        path: |
+          build/csgo_gc/Release/csgo_gc.dll
+          build/launcher/Release/csgo.exe
+          build/launcher/Release/srcds.exe
