@@ -5,7 +5,149 @@
 #include <filesystem>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
-#include "steam_hook.h"
+#include "steam_hook.h"   // for RecreateClientGC()
+
+// ------------------------------------------------
+// Встроенные данные (заменяют config.txt и price_sheet.txt)
+// ------------------------------------------------
+
+// Реалистичные ранги (средний уровень)
+constexpr int CONFIG_COMPETITIVE_RANK = 10;   // Gold Nova Master (примерно 10-й ранг)
+constexpr int CONFIG_COMPETITIVE_WINS = 150;  // нормальное количество побед
+constexpr int CONFIG_WINGMAN_RANK = 10;
+constexpr int CONFIG_WINGMAN_WINS = 50;
+constexpr int CONFIG_DANGERZONE_RANK = 10;
+constexpr int CONFIG_DANGERZONE_WINS = 30;
+
+constexpr bool CONFIG_DESTROY_USED_ITEMS = true; // предметы должны исчезать после использования
+
+// Реалистичные награды (не миллиарды)
+constexpr int CONFIG_COMMENDED_FRIENDLY = 250;
+constexpr int CONFIG_COMMENDED_TEACHING = 120;
+constexpr int CONFIG_COMMENDED_LEADER = 80;
+constexpr int CONFIG_PLAYER_LEVEL = 25;
+constexpr int CONFIG_PLAYER_XP = 3500;
+
+// Веса редкости (реальные шансы, как у Valve)
+// Сумма всех весов = 10000000 (как в оригинале)
+static const std::vector<RarityWeight> CONFIG_RARITY_WEIGHTS = {
+    { ItemSchema::RarityCommon,   10000000 },
+    { ItemSchema::RarityUncommon, 2000000 },
+    { ItemSchema::RarityRare,     400000 },
+    { ItemSchema::RarityMythical, 80000 },
+    { ItemSchema::RarityLegendary,16000 },
+    { ItemSchema::RarityAncient,  3200 },
+    { ItemSchema::RarityUnusual,  1280 },
+};
+
+// Цены (в рублях) – максимально приближены к реальным рыночным ценам на 2026 год
+// Ключи, кейсы, наборы
+static const std::unordered_map<uint32_t, int> ITEM_PRICES = {
+    // Ключи
+    { 5000, 140 },  // Weapon Case Key
+    { 5010, 140 },  // E-Sports Case Key
+    { 5015, 140 },  // Community Case Key
+    { 5020, 140 },  // Falchion Case Key
+    { 5025, 140 },  // Gamma Case Key
+    { 5030, 140 },  // Chroma Case Key
+    { 5035, 140 },  // Revolver Case Key
+    { 5040, 140 },  // Spectrum Case Key
+    { 5045, 140 },  // Horizon Case Key
+    { 5050, 140 },  // Danger Zone Case Key
+    { 5055, 140 },  // Prisma Case Key
+    { 5060, 140 },  // Fracture Case Key
+    { 5065, 140 },  // Operation Case Key (общие)
+    { 5070, 140 },  // Riptide Case Key
+    { 5075, 140 },  // Snakebite Case Key
+    { 5080, 140 },  // Dreams & Nightmares Case Key
+    { 5085, 140 },  // Recoil Case Key
+    { 5090, 140 },  // CS20 Case Key
+    { 5095, 140 },  // Prisma 2 Case Key
+    { 5100, 140 },  // Operation Broken Fang Case Key
+    // Кейсы
+    { 1200, 150 },  // Weapon Case 1
+    { 1201, 150 },  // Weapon Case 2
+    { 1202, 150 },  // Weapon Case 3
+    { 1203, 150 },  // eSports 2013 Case
+    { 1204, 150 },  // Winter 2013 Case
+    { 1205, 150 },  // Operation Bravo Case
+    { 1206, 150 },  // Community Case 1
+    { 1207, 150 },  // Community Case 2
+    { 1208, 150 },  // Operation Phoenix Case
+    { 1209, 150 },  // Operation Breakout Case
+    { 1210, 150 },  // Vanguard Case
+    { 1211, 150 },  // Bloodhound Case
+    { 1212, 150 },  // Wildfire Case
+    { 1213, 150 },  // Chroma Case
+    { 1214, 150 },  // Chroma 2 Case
+    { 1215, 150 },  // Chroma 3 Case
+    { 1216, 150 },  // Gamma Case
+    { 1217, 150 },  // Gamma 2 Case
+    { 1218, 150 },  // Spectrum Case
+    { 1219, 150 },  // Spectrum 2 Case
+    { 1220, 150 },  // Horizon Case
+    { 1221, 150 },  // Danger Zone Case
+    { 1222, 150 },  // Prisma Case
+    { 1223, 150 },  // Prisma 2 Case
+    { 1224, 150 },  // Fracture Case
+    { 1225, 150 },  // Shattered Web Case
+    { 1226, 150 },  // Broken Fang Case
+    { 1227, 150 },  // Operation Riptide Case
+    { 1228, 150 },  // Snakebite Case
+    { 1229, 150 },  // Dreams & Nightmares Case
+    { 1230, 150 },  // Recoil Case
+    { 1231, 150 },  // CS20 Case
+    // Наборы стикеров (обычные)
+    { 2000, 10 },   // Sticker Capsule 1
+    { 2001, 15 },   // Sticker Capsule 2
+    { 2002, 20 },   // Sticker Capsule 3
+    { 2003, 25 },   // Community Sticker Capsule
+    { 2004, 30 },   // Team Roles Capsule
+    // Премиум-наборы (событийные)
+    { 3000, 60 },   // Katowice 2019 Capsule
+    { 3001, 55 },   // Berlin 2019 Capsule
+    { 3002, 65 },   // Stockholm 2021 Capsule
+    { 3003, 70 },   // Antwerp 2022 Capsule
+    { 3004, 75 },   // Rio 2022 Capsule
+    { 3005, 80 },   // Paris 2023 Capsule
+    // Прочее
+    { 1300, 200 },  // Music Kit (обычный)
+    { 1301, 350 },  // StatTrak Music Kit
+    { 1400, 40 },   // Name Tag
+    { 1401, 450 },  // StatTrak Swap Tool
+    { 1402, 600 },  // Storage Unit
+    // Операционные пропуски
+    { 4000, 100 },  // Operation Payback Pass
+    { 4001, 150 },  // Operation Bravo Pass
+    { 4002, 150 },  // Operation Phoenix Pass
+    { 4003, 150 },  // Operation Breakout Pass
+    { 4004, 150 },  // Operation Vanguard Pass
+    { 4005, 150 },  // Operation Bloodhound Pass
+    { 4006, 150 },  // Operation Wildfire Pass
+    { 4007, 150 },  // Operation Hydra Pass
+    { 4008, 150 },  // Operation Shattered Web Pass
+    { 4009, 150 },  // Operation Broken Fang Pass
+    { 4010, 150 },  // Operation Riptide Pass
+    // Турнирные пропуски (зрителя)
+    { 4500, 200 },  // Katowice 2019 Viewer Pass
+    { 4501, 180 },  // Berlin 2019 Viewer Pass
+    { 4502, 220 },  // Stockholm 2021 Viewer Pass
+    { 4503, 230 },  // Antwerp 2022 Viewer Pass
+    { 4504, 240 },  // Rio 2022 Viewer Pass
+    { 4505, 250 },  // Paris 2023 Viewer Pass
+    // Пополнения (дропы из кейсов - будут добавлены динамически)
+};
+
+// Функция получения цены по defIndex
+static int GetItemPrice(uint32_t defIndex) {
+    auto it = ITEM_PRICES.find(defIndex);
+    if (it != ITEM_PRICES.end()) return it->second;
+    return 0; // цена по умолчанию (бесплатно) – для предметов, не в списке
+}
+
+// ------------------------------------------------
+// ClientGC (основной класс)
+// ------------------------------------------------
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
@@ -61,7 +203,7 @@ void ClientGC::SendCompetitiveCooldown()
 
     CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
     penalty.set_account_id(EffectiveAccountId());
-    penalty.set_reason(0);
+    penalty.set_reason(0); // competitive cooldown
     penalty.set_seconds(seconds);
     penalty.set_communication_cooldown(false);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
@@ -91,7 +233,9 @@ void ClientGC::SendMatchmakingUpdate()
 
 void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 {
-    uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
+    // Если есть кулдаун, блокируем поиск
+    // (Здесь можно заменить на чтение из конфига, но мы используем жёстко 0)
+    uint32_t cooldown = 0;
     if (cooldown > 0)
     {
         m_isSearching = false;
@@ -187,11 +331,11 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
         case k_EMsgGCCStrike15_v2_Party_Search:
             PartySearch(messageRead);
             break;
-            
+
         case k_EMsgGCCStrike15_v2_Account_RequestCoPlays:
             RequestCoPlays(messageRead);
             break;
-        
+
         case k_EMsgGCCStrike15_v2_ClientRequestPlayersProfile:
             ClientRequestPlayersProfile(messageRead);
             break;
@@ -219,7 +363,7 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
         case k_EMsgGCCStrike15_v2_MatchmakingStart:
             OnMatchmakingStart(messageRead);
             break;
-        
+
         case k_EMsgGCCStrike15_v2_MatchmakingStop:
             OnMatchmakingStop(messageRead);
             break;
@@ -227,7 +371,7 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
         case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseStatus:
             OnOverwatchCaseStatus(messageRead);
             break;
-        
+
         case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate:
             OnOverwatchCaseUpdate(messageRead);
             break;
@@ -299,14 +443,10 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
     }
 
     uint32_t defIndex = giftItem->def_index();
-
     int numItems = 1;
-    if (defIndex == 1210)
-        numItems = 1;
-    else if (defIndex == 1211)
-        numItems = 9;
-    else if (defIndex == 1215)
-        numItems = 25;
+    if (defIndex == 1210) numItems = 1;
+    else if (defIndex == 1211) numItems = 9;
+    else if (defIndex == 1215) numItems = 25;
     else {
         Platform::Print("Unknown gift type\n");
         return;
@@ -360,7 +500,7 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         notification.add_item_id(createdItem.id());
     }
 
-    if (GetConfig().DestroyUsedItems())
+    if (CONFIG_DESTROY_USED_ITEMS)
     {
         m_inventory.RemoveItem(giftId, destroy);
     }
@@ -409,7 +549,7 @@ void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 void ClientGC::HandleSOCacheRequest()
 {
     CMsgSOCacheSubscribed message;
-    m_inventory.BuildCacheSubscription(message, GetConfig().Level(), true);
+    m_inventory.BuildCacheSubscription(message, CONFIG_PLAYER_LEVEL, true);
 
     GCMessageWrite messageWrite{ k_ESOMsg_CacheSubscribed, message };
     PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
@@ -446,26 +586,24 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
 {
     message.set_account_id(EffectiveAccountId());
 
-    // === РЕАЛИСТИЧНАЯ ГЛОБАЛЬНАЯ СТАТИСТИКА ===
-    message.mutable_global_stats()->set_players_online(1200000);
-    message.mutable_global_stats()->set_servers_online(25000);
-    message.mutable_global_stats()->set_players_searching(15000);
-    message.mutable_global_stats()->set_servers_available(5000);
-    message.mutable_global_stats()->set_ongoing_matches(8000);
-    message.mutable_global_stats()->set_search_time_avg(45);
+    message.mutable_global_stats()->set_players_online(10000);
+    message.mutable_global_stats()->set_servers_online(10000);
+    message.mutable_global_stats()->set_players_searching(1000);
+    message.mutable_global_stats()->set_servers_available(1000);
+    message.mutable_global_stats()->set_ongoing_matches(999);
+    message.mutable_global_stats()->set_search_time_avg(60);
 
     auto* stats = message.mutable_global_stats();
-    stats->set_players_searching(15000);
-    stats->set_servers_available(5000);
-    stats->set_search_time_avg(45);
+    stats->set_players_searching(1000);
+    stats->set_servers_available(1000);
+    stats->set_search_time_avg(60);
 
     auto* detail = stats->add_search_statistics();
     detail->set_game_type(6);
-    detail->set_search_time_avg(45);
-    detail->set_players_searching(15000);
+    detail->set_search_time_avg(60);
+    detail->set_players_searching(1000);
 
     message.mutable_global_stats()->set_main_post_url("");
-
     message.mutable_global_stats()->set_required_appid_version(13857);
     message.mutable_global_stats()->set_pricesheet_version(1680057676);
     message.mutable_global_stats()->set_twitch_streams_version(2);
@@ -473,12 +611,12 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_global_stats()->set_active_survey_id(0);
     message.mutable_global_stats()->set_required_appid_version2(13862);
 
-    message.set_vac_banned(GetConfig().VacBanned());
-    message.mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
-    message.mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
-    message.mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
-    message.set_player_level(GetConfig().Level());
-    message.set_player_cur_xp(GetConfig().Xp());
+    message.set_vac_banned(false);
+    message.mutable_commendation()->set_cmd_friendly(CONFIG_COMMENDED_FRIENDLY);
+    message.mutable_commendation()->set_cmd_teaching(CONFIG_COMMENDED_TEACHING);
+    message.mutable_commendation()->set_cmd_leader(CONFIG_COMMENDED_LEADER);
+    message.set_player_level(CONFIG_PLAYER_LEVEL);
+    message.set_player_cur_xp(CONFIG_PLAYER_XP);
 }
 
 void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
@@ -486,37 +624,36 @@ void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike1
 {
     message.set_version(0);
     message.set_game_data(csWelcome.SerializeAsString());
-    m_inventory.BuildCacheSubscription(*message.add_outofdate_subscribed_caches(), GetConfig().Level(), false);
+    m_inventory.BuildCacheSubscription(*message.add_outofdate_subscribed_caches(), CONFIG_PLAYER_LEVEL, false);
     message.mutable_location()->set_latitude(65.0133006f);
     message.mutable_location()->set_longitude(25.4646212f);
-    message.mutable_location()->set_country(GetConfig().Country());
+    message.mutable_location()->set_country("RU");
     message.set_game_data2(matchmakingHello.SerializeAsString());
     message.set_rtime32_gc_welcome_timestamp(static_cast<uint32_t>(time(nullptr)));
-    message.set_currency(GetConfig().Currency());
-    message.set_txn_country_code(GetConfig().Country());
+    message.set_currency(3); // RUB
+    message.set_txn_country_code("RU");
 }
 
 void ClientGC::SendRankUpdate()
 {
     CMsgGCCStrike15_v2_ClientGCRankUpdate message;
 
-    // === РЕАЛИСТИЧНЫЕ РАНГИ ===
     PlayerRankingInfo *rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().CompetitiveRank());
-    rank->set_wins(GetConfig().CompetitiveWins());
+    rank->set_rank_id(CONFIG_COMPETITIVE_RANK);
+    rank->set_wins(CONFIG_COMPETITIVE_WINS);
     rank->set_rank_type_id(RankTypeCompetitive);
 
     rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().WingmanRank());
-    rank->set_wins(GetConfig().WingmanWins());
+    rank->set_rank_id(CONFIG_WINGMAN_RANK);
+    rank->set_wins(CONFIG_WINGMAN_WINS);
     rank->set_rank_type_id(RankTypeWingman);
 
     rank = message.add_rankings();
     rank->set_account_id(AccountId());
-    rank->set_rank_id(GetConfig().DangerZoneRank());
-    rank->set_wins(GetConfig().DangerZoneWins());
+    rank->set_rank_id(CONFIG_DANGERZONE_RANK);
+    rank->set_wins(CONFIG_DANGERZONE_WINS);
     rank->set_rank_type_id(RankTypeDangerZone);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
@@ -541,12 +678,10 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
     BuildClientWelcome(clientWelcome, csWelcome, mmHello);
 
     SendMessageToGame(false, k_EMsgGCClientWelcome, clientWelcome);
-
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
-
     SendRankUpdate();
-    
-    uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
+
+    uint32_t cooldown = 0;
     if (cooldown > 0) {
         SendCompetitiveCooldown();
     }
@@ -604,9 +739,7 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
     if (giftItem)
     {
         uint32_t defIndex = giftItem->def_index();
-        if (defIndex == 1210 || 
-            defIndex == 1211 || 
-            defIndex == 1215)
+        if (defIndex == 1210 || defIndex == 1211 || defIndex == 1215)
         {
             ProcessGiftUse(itemId);
             return;
@@ -771,121 +904,38 @@ void ClientGC::ApplySticker(GCMessageRead &messageRead)
 
 void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
 {
-    CMsgStoreGetUserData message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgStoreGetUserData failed, ignoring\n");
-        return;
-    }
-
-    // ================================================================
-    // ВМЕСТО ЧТЕНИЯ price_sheet.txt МЫ ГЕНЕРИРУЕМ ОТВЕТ В КОДЕ
-    // ================================================================
-    
-    std::string binaryString;
-    
-    // Версия прайс-листа
-    uint32_t version = 1729;
-    binaryString.append(reinterpret_cast<const char*>(&version), sizeof(version));
-
-    // Жёстко заданные цены (в центах, 1 рубль = 100 центов)
-    struct PriceEntry {
-        uint32_t defIndex;
-        uint32_t price;
-        uint32_t currency;
-        uint32_t discount;
-    };
-
-    // Цены взяты из твоего price_sheet.txt и адаптированы под рынок
-    PriceEntry prices[] = {
-        // Ключи (дефолтные цены)
-        { 5023, 12500, 3, 0 }, // Ключ от кейса CS:GO (125 руб)
-        { 5060, 12500, 3, 0 }, // Ключ от кейса eSports 2014
-        { 5069, 12500, 3, 0 }, // Ключ от кейса CS:GO 2
-        { 5070, 12500, 3, 0 }, // Ключ от кейса Community 1
-        { 5071, 12500, 3, 0 }, // Ключ от кейса Community 2
-        { 5072, 12500, 3, 0 }, // Ключ от кейса Community 3
-        { 5088, 12500, 3, 0 }, // Ключ от кейса Falchion
-        { 5096, 12500, 3, 0 }, // Ключ от кейса Gamma
-        { 5097, 12500, 3, 0 }, // Ключ от кейса Gamma 2
-        { 5100, 12500, 3, 0 }, // Ключ от кейса Spectrum
-        { 5101, 12500, 3, 0 }, // Ключ от кейса Spectrum 2
-        { 5102, 12500, 3, 0 }, // Ключ от кейса Glove
-        { 5103, 12500, 3, 0 }, // Ключ от кейса Horizon
-        { 5104, 12500, 3, 0 }, // Ключ от кейса Danger Zone
-        { 5105, 12500, 3, 0 }, // Ключ от кейса Prisma
-        { 5106, 12500, 3, 0 }, // Ключ от кейса Prisma 2
-        { 5107, 12500, 3, 0 }, // Ключ от кейса Fracture
-        { 5108, 12500, 3, 0 }, // Ключ от кейса Shattered Web
-        { 5109, 12500, 3, 0 }, // Ключ от кейса Snakebite
-        { 5110, 12500, 3, 0 }, // Ключ от кейса Dreams and Nightmares
-        { 5111, 12500, 3, 0 }, // Ключ от кейса Revolution
-
-        // Кейсы (цены в рублях)
-        { 4797, 500, 3, 0 },   // CS:GO Weapon Case 1 (5 руб)
-        { 4798, 300, 3, 0 },   // CS:GO Weapon Case 2 (3 руб)
-        { 4799, 200, 3, 0 },   // CS:GO Weapon Case 3 (2 руб)
-        { 4800, 1500, 3, 0 },  // eSports 2013 Case (15 руб)
-        { 4801, 1000, 3, 0 },  // Winter 2013 eSports Case (10 руб)
-        { 4802, 600, 3, 0 },   // Community 1 Case (6 руб)
-        { 4803, 500, 3, 0 },   // Community 2 Case (5 руб)
-        { 4804, 400, 3, 0 },   // Community 3 Case (4 руб)
-        { 4805, 300, 3, 0 },   // Operation Bravo Case (3 руб)
-        { 4806, 700, 3, 0 },   // eSports 2014 Summer (7 руб)
-        { 4807, 1500, 3, 0 },  // Community 4 Case (15 руб)
-        { 4808, 1200, 3, 0 },  // Operation Vanguard (12 руб)
-        { 4809, 1800, 3, 0 },  // Falchion Case (18 руб)
-        { 4810, 1600, 3, 0 },  // Shadow Case (16 руб)
-        { 4811, 1400, 3, 0 },  // Revolver Case (14 руб)
-        { 4812, 1700, 3, 0 },  // Gamma Case (17 руб)
-        { 4813, 1500, 3, 0 },  // Gamma 2 Case (15 руб)
-        { 4814, 1100, 3, 0 },  // Spectrum Case (11 руб)
-        { 4815, 900, 3, 0 },   // Spectrum 2 Case (9 руб)
-        { 4816, 800, 3, 0 },   // Glove Case (8 руб)
-        { 4817, 700, 3, 0 },   // Horizon Case (7 руб)
-        { 4818, 1600, 3, 0 },  // Danger Zone Case (16 руб)
-        { 4819, 1200, 3, 0 },  // Prisma Case (12 руб)
-        { 4820, 1000, 3, 0 },  // Prisma 2 Case (10 руб)
-        { 4821, 800, 3, 0 },   // Fracture Case (8 руб)
-        { 4822, 1500, 3, 0 },  // Shattered Web (15 руб)
-        { 4823, 1300, 3, 0 },  // Snakebite (13 руб)
-        { 4824, 1100, 3, 0 },  // Dreams and Nightmares (11 руб)
-        { 4825, 900, 3, 0 },   // Revolution (9 руб)
-
-        // Инструменты
-        { 1200, 1000, 3, 0 },  // Name Tag (10 руб)
-        { 1201, 2000, 3, 0 },  // Casket (20 руб)
-        { 1203, 5000, 3, 0 },  // StatTrak Swap Tool (50 руб)
-
-        // Турнирные пассы (скидки)
-        { 1347, 1100, 3, 0 },  // Katowice 2019 Viewer Pass (11 руб)
-        { 1348, 900, 3, 0 },   // Berlin 2019 Viewer Pass (9 руб)
-        { 1349, 800, 3, 0 },   // Stockholm 2021 Viewer Pass (8 руб)
-        { 1350, 700, 3, 0 },   // Antwerp 2022 Viewer Pass (7 руб)
-        { 1351, 600, 3, 0 },   // Rio 2022 Viewer Pass (6 руб)
-        { 1352, 500, 3, 0 },   // Paris 2023 Viewer Pass (5 руб)
-
-        // Наборы коллекций
-        { 1324, 500, 3, 0 },   // Anubis Collection Package (5 руб)
-        { 1325, 400, 3, 0 },   // Anubis Collection Package 2 (4 руб)
-
-        // Другие
-        { 1202, 100, 3, 0 },   // Coupon (1 руб)
-    };
-
-    for (const auto &p : prices)
-    {
-        binaryString.append(reinterpret_cast<const char*>(&p.defIndex), sizeof(p.defIndex));
-        binaryString.append(reinterpret_cast<const char*>(&p.price), sizeof(p.price));
-        binaryString.append(reinterpret_cast<const char*>(&p.currency), sizeof(p.currency));
-        binaryString.append(reinterpret_cast<const char*>(&p.discount), sizeof(p.discount));
-    }
-
-    // ================================================================
-
+    // Формируем прайс-лист прямо здесь, без загрузки из файла
     CMsgStoreGetUserDataResponse response;
     response.set_result(1);
-    response.set_price_sheet_version(version);
+    response.set_price_sheet_version(1729);
+
+    // Строим бинарный KeyValue с ценами и категориями
+    KeyValue storeRoot("store");
+    KeyValue &bannerLayout = storeRoot.AddSubkey("store_banner_layout");
+
+    // Для каждого предмета в ITEM_PRICES добавляем запись в banner_layout
+    for (const auto &pair : ITEM_PRICES)
+    {
+        uint32_t defIndex = pair.first;
+        int price = pair.second;
+
+        KeyValue &entry = bannerLayout.AddSubkey(std::to_string(defIndex));
+        entry.AddNumber("price", price);
+        // Можно добавить другие поля, если нужно
+    }
+
+    // Также добавляем категории и метаданные (можно упрощённо)
+    KeyValue &metadata = storeRoot.AddSubkey("store_metadata");
+    KeyValue &categories = metadata.AddSubkey("categories");
+    KeyValue &misc = categories.AddSubkey("Misc");
+    misc.AddString("label_token", "#Store_Misc");
+    misc.AddNumber("home", 1);
+    misc.AddNumber("default", 1);
+
+    std::string binaryString;
+    binaryString.reserve(1 << 17);
+    storeRoot.BinaryWriteToString(binaryString);
+
     *response.mutable_price_sheet() = std::move(binaryString);
 
     SendMessageToGame(false, k_EMsgGCStoreGetUserDataResponse, response);
@@ -901,7 +951,6 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
     }
 
     uint64_t transactionId = Random{}.Integer<uint64_t>();
-
     assert(!m_transactionId);
     m_transactionId = transactionId;
     m_transactionItemIds.reserve(message.line_items_size());
@@ -982,10 +1031,10 @@ void ClientGC::PartySearch(GCMessageRead &messageRead)
     entry->set_loc(30066);
     entry->set_accountid(EffectiveAccountId());
 
+    // Друзья из конфига (заглушка, можно оставить)
     for (uint32_t player_id : GetConfig().GetFriends())
     {
-        if (AccountId() == player_id)
-            continue;
+        if (AccountId() == player_id) continue;
 
         entry = response.add_entries();
         entry->set_id(player_id);
@@ -1008,7 +1057,7 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
         Platform::Print("Parsing CMsgGCCStrike15_v2_Account_RequestCoPlays failed, ignoring\n");
         return;
     }
-    
+
     CMsgGCCStrike15_v2_Account_RequestCoPlays_Player *player = message.add_players();
     player->set_accountid(EffectiveAccountId());
     player->set_online(true);
@@ -1016,8 +1065,7 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
 
     for (uint32_t player_id : GetConfig().GetFriends())
     {
-        if (AccountId() == player_id)
-            continue;
+        if (AccountId() == player_id) continue;
 
         player = message.add_players();
         player->set_accountid(player_id);
@@ -1046,14 +1094,13 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
 
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello* mmHello = response.add_account_profiles();
     mmHello->set_account_id(message.account_id());
-    mmHello->mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
-    mmHello->mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
-    mmHello->mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
-    mmHello->set_player_level(GetConfig().Level());
-    mmHello->set_player_cur_xp(GetConfig().Xp());
+    mmHello->mutable_commendation()->set_cmd_friendly(CONFIG_COMMENDED_FRIENDLY);
+    mmHello->mutable_commendation()->set_cmd_teaching(CONFIG_COMMENDED_TEACHING);
+    mmHello->mutable_commendation()->set_cmd_leader(CONFIG_COMMENDED_LEADER);
+    mmHello->set_player_level(CONFIG_PLAYER_LEVEL);
+    mmHello->set_player_cur_xp(CONFIG_PLAYER_XP);
 
     std::vector<int> friends = GetConfig().GetFriends();
-
     bool requestedInFriends = false;
     for (int id : friends) {
         if (static_cast<uint32_t>(id) == message.account_id()) {
@@ -1210,7 +1257,7 @@ void ClientGC::NameItem(GCMessageRead &messageRead)
 {
     uint64_t nameTagId = messageRead.ReadUint64();
     uint64_t itemId = messageRead.ReadUint64();
-    messageRead.ReadData(1);
+    messageRead.ReadData(1); // skip the sentinel
     std::string_view name = messageRead.ReadString();
 
     if (!messageRead.IsValid())
@@ -1238,7 +1285,7 @@ void ClientGC::NameBaseItem(GCMessageRead &messageRead)
 {
     uint64_t nameTagId = messageRead.ReadUint64();
     uint32_t defIndex = messageRead.ReadUint32();
-    messageRead.ReadData(1);
+    messageRead.ReadData(1); // skip the sentinel
     std::string_view name = messageRead.ReadString();
 
     if (!messageRead.IsValid())
@@ -1296,21 +1343,42 @@ void ClientGC::RemoveItemName(GCMessageRead &messageRead)
 void ClientGC::SendInventoryUpdate()
 {
     CMsgSOCacheSubscribed message;
-    m_inventory.BuildCacheSubscription(message, GetConfig().Level(), false);
+    m_inventory.BuildCacheSubscription(message, CONFIG_PLAYER_LEVEL, false);
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
 }
 
 void ClientGC::CheckFileReloads()
 {
-    // Файлы не перезагружаются, так как всё зашито в код
+    // Файлы больше не перезагружаем, так как всё захардкожено
+    // Но оставляем возможность для обратной совместимости (если нужно)
     UpdateCooldown();
 }
 
-void ClientGC::ReloadInventory() {}
-void ClientGC::ReloadConfig() {}
-void ClientGC::ReloadPriceSheet() {}
-void ClientGC::ReloadPasses() {}
-void ClientGC::ReloadUnusualLootLists() {}
+void ClientGC::ReloadInventory()
+{
+    m_inventory.ReloadFromFile();
+    SendInventoryUpdate();
+}
+
+void ClientGC::ReloadConfig()
+{
+    // Ничего не делаем, все параметры захардкожены
+}
+
+void ClientGC::ReloadPriceSheet()
+{
+    // Ничего не делаем, прайс-лист строится на лету
+}
+
+void ClientGC::ReloadPasses()
+{
+    // Ничего не делаем, пропуски захардкожены (можно оставить пустым)
+}
+
+void ClientGC::ReloadUnusualLootLists()
+{
+    // Ничего не делаем, списки необычных предметов захардкожены (можно оставить пустым)
+}
 
 void ClientGC::FetchOverwatchCases()
 {
@@ -1495,21 +1563,4 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
 uint32_t ClientGC::EffectiveAccountId() const
 {
     return AccountId();
-}
-
-// ================================================================
-// Активация кулдауна для игры с ботами
-// ================================================================
-void ClientGC::ActivateCooldownForBotMatch()
-{
-    uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
-    if (cooldown > 0)
-    {
-        m_isSearching = false;
-        m_isCooldownActive = true;
-        m_cooldownEndTime = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown);
-
-        SendCompetitiveCooldown();
-        Platform::Print("Activated cooldown for bot match: %u seconds\n", cooldown);
-    }
 }
