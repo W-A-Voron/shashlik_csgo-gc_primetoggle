@@ -10,6 +10,9 @@
 // Файл для сохранения прогресса
 constexpr const char *ProgressFilePath = "csgo_gc/progress.txt";
 
+// ================= ГЛОБАЛЬНАЯ ПЕРЕМЕННАЯ ПРОГРЕССА =================
+static PlayerProgress g_progress;
+
 // ================= ЗАГРУЗКА И СОХРАНЕНИЕ ПРОГРЕССА =================
 
 static void LoadProgress()
