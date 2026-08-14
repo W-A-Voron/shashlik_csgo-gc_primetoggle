@@ -15,7 +15,6 @@ static void SaveDynamicStatsToConfig(uint32_t compRank, uint32_t compWins,
                                      uint32_t wingRank, uint32_t wingWins,
                                      uint32_t dzRank, uint32_t dzWins)
 {
-    // Читаем весь файл в строку, чтобы сохранить форматирование
     std::string filePath = "csgo_gc/config.txt";
     std::ifstream inFile(filePath);
     if (!inFile.is_open()) {
@@ -26,15 +25,10 @@ static void SaveDynamicStatsToConfig(uint32_t compRank, uint32_t compWins,
     std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
     inFile.close();
 
-    // Очень простая замена строк. В идеале нужен парсер, но для этого мода хватит и так.
-    // Формат строк в файле: "competitive_rank" "13" и т.д.
-    // Используем временные буферы для замены.
-    
     auto replaceValue = [&](const std::string& key, uint32_t newValue) {
         std::string searchKey = "\"" + key + "\"";
         size_t pos = content.find(searchKey);
         if (pos != std::string::npos) {
-            // Ищем открывающую кавычку значения
             size_t startQuote = content.find('\"', pos + searchKey.length());
             if (startQuote != std::string::npos) {
                 size_t endQuote = content.find('\"', startQuote + 1);
@@ -53,7 +47,6 @@ static void SaveDynamicStatsToConfig(uint32_t compRank, uint32_t compWins,
     replaceValue("dangerzone_rank", dzRank);
     replaceValue("dangerzone_wins", dzWins);
 
-    // Записываем обратно в файл
     std::ofstream outFile(filePath);
     if (!outFile.is_open()) {
         Platform::Print("SaveDynamicStats: Failed to write to config.txt!\n");
@@ -76,7 +69,6 @@ ClientGC::ClientGC(uint64_t steamId)
     StartThread();
     FetchOverwatchCases();
 
-    // Сбрасываем флаг "реального матча" при старте
     m_hasCompletedMatch = false;
 
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
@@ -297,7 +289,7 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             OnOverwatchCaseUpdate(messageRead);
             break;
 
-        case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops: // --- ЗДЕСЬ ЛОВИМ КОНЕЦ МАТЧА ---
+        case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops:
             OnMatchEnd(messageRead);
             break;
 
@@ -365,17 +357,13 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
     uint32_t dzWins = GetConfig().DangerZoneWins();
 
     // Простая логика: добавляем 1 победу и, если нужно, повышаем ранг (каждые 10 побед)
-    // В реальности надо парсить тип матча, но для простоты мы повышаем всё.
     compWins += 1;
     wingWins += 1;
     dzWins += 1;
 
     // Логика повышения ранга (от 1 до 18, 10 побед на ранг)
     auto rankUp = [](uint32_t currentWins, uint32_t currentRank) -> uint32_t {
-        // Если ранг уже глобал, дальше не повышаем
         if (currentRank >= 18) return 18;
-        
-        // Каждые 10 побед - +1 ранг
         uint32_t newRank = 1 + (currentWins / 10);
         if (newRank > 18) newRank = 18;
         return newRank;
@@ -389,8 +377,6 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
     SaveDynamicStatsToConfig(newCompRank, compWins, newWingRank, wingWins, newDzRank, dzWins);
 
     // Обновляем ранги в памяти (чтобы отправить клиенту)
-    // ВАЖНО: GetConfig().ReloadFromFile() перезагрузит конфиг, но мы отправим ранги вручную.
-    // Сначала отправим обновление рангов в игру
     CMsgGCCStrike15_v2_ClientGCRankUpdate rankUpdate;
     PlayerRankingInfo *rank = rankUpdate.add_rankings();
     rank->set_account_id(EffectiveAccountId());
@@ -652,7 +638,7 @@ void ClientGC::SendRankUpdate()
     rank->set_rank_type_id(RankTypeWingman);
 
     rank = message.add_rankings();
-    rank->set_account_id(AccountId());
+    rank->set_account_id(EffectiveAccountId());
     rank->set_rank_id(GetConfig().DangerZoneRank());
     rank->set_wins(GetConfig().DangerZoneWins());
     rank->set_rank_type_id(RankTypeDangerZone);
