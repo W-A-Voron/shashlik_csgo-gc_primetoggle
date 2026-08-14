@@ -7,6 +7,11 @@
 #include <steam/isteamhttp.h>
 #include "steam_hook.h"   // for RecreateClientGC()
 
+// --- ХАРДКОДНЫЕ ЗНАЧЕНИЯ, ЧТОБЫ КОНФИГ НЕ ЛОМАЛ ---
+static constexpr bool FORCE_MAX_RARITY = false;        // выключаем, чтобы был реальный шанс
+static constexpr bool DESTROY_USED_ITEMS = true;       // предметы исчезают после использования
+static constexpr bool RANDOMIZE_FLOAT = true;          // флоат рандомится
+
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
     , m_inventory{ m_steamId }
@@ -55,6 +60,7 @@ void ClientGC::SendCompetitiveCooldown()
             m_cooldownEndTime - std::chrono::steady_clock::now()).count();
         seconds = (remaining > 0) ? static_cast<uint32_t>(remaining) : 0;
         if (seconds == 0) {
+            // expired during the check
             m_isCooldownActive = false;
         }
     }
@@ -78,32 +84,19 @@ void ClientGC::SendMatchmakingUpdate()
     update.set_matchmaking(m_isSearching ? 1 : 0);
 
     auto* stats = update.mutable_global_stats();
-    stats->set_players_searching(1000);
-    stats->set_search_time_avg(60);
+    stats->set_players_searching(1200);
+    stats->set_search_time_avg(45);
 
     auto* detail = stats->add_search_statistics();
-    detail->set_game_type(6);
-    detail->set_search_time_avg(60);
-    detail->set_players_searching(1000);
+    detail->set_game_type(0);
+    detail->set_search_time_avg(45);
+    detail->set_players_searching(1200);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
 }
 
 void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 {
-    uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
-    if (cooldown > 0)
-    {
-        m_isSearching = false;
-        m_isCooldownActive = true;
-        m_cooldownEndTime = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown);
-
-        SendMatchmakingUpdate();
-        SendCompetitiveCooldown();
-        Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
-        return;
-    }
-
     m_isSearching = true;
     SendMatchmakingUpdate();
 }
@@ -284,7 +277,7 @@ void ClientGC::UpdateCooldown()
     auto now = std::chrono::steady_clock::now();
     if (now >= m_cooldownEndTime) {
         m_isCooldownActive = false;
-        SendCompetitiveCooldown();
+        SendCompetitiveCooldown(); // sends 0
         Platform::Print("Competitive cooldown expired.\n");
     }
 }
@@ -360,7 +353,7 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         notification.add_item_id(createdItem.id());
     }
 
-    if (GetConfig().DestroyUsedItems())
+    if (DESTROY_USED_ITEMS)
     {
         m_inventory.RemoveItem(giftId, destroy);
     }
@@ -382,6 +375,7 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 }
+
 
 void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 {
@@ -446,23 +440,18 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
 {
     message.set_account_id(EffectiveAccountId());
 
-    // Realistic global stats
-    message.mutable_global_stats()->set_players_online(15000);
-    message.mutable_global_stats()->set_servers_online(8000);
-    message.mutable_global_stats()->set_players_searching(2500);
-    message.mutable_global_stats()->set_servers_available(3500);
-    message.mutable_global_stats()->set_ongoing_matches(1200);
+    message.mutable_global_stats()->set_players_online(18000);
+    message.mutable_global_stats()->set_servers_online(14000);
+    message.mutable_global_stats()->set_players_searching(1200);
+    message.mutable_global_stats()->set_servers_available(950);
+    message.mutable_global_stats()->set_ongoing_matches(870);
     message.mutable_global_stats()->set_search_time_avg(45);
 
     auto* stats = message.mutable_global_stats();
-    stats->set_players_searching(2500);
-    stats->set_servers_available(3500);
-    stats->set_search_time_avg(45);
-
     auto* detail = stats->add_search_statistics();
     detail->set_game_type(6);
     detail->set_search_time_avg(45);
-    detail->set_players_searching(2500);
+    detail->set_players_searching(1200);
 
     message.mutable_global_stats()->set_main_post_url("");
 
@@ -473,12 +462,12 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_global_stats()->set_active_survey_id(0);
     message.mutable_global_stats()->set_required_appid_version2(13862);
 
-    message.set_vac_banned(GetConfig().VacBanned());
-    message.mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
-    message.mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
-    message.mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
-    message.set_player_level(GetConfig().Level());
-    message.set_player_cur_xp(GetConfig().Xp());
+    message.set_vac_banned(false);
+    message.mutable_commendation()->set_cmd_friendly(247);
+    message.mutable_commendation()->set_cmd_teaching(84);
+    message.mutable_commendation()->set_cmd_leader(41);
+    message.set_player_level(32);
+    message.set_player_cur_xp(4923);
 }
 
 void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
@@ -500,22 +489,25 @@ void ClientGC::SendRankUpdate()
 {
     CMsgGCCStrike15_v2_ClientGCRankUpdate message;
 
+    // --- Компетитив: Глобал элит (18), побед 317 ---
     PlayerRankingInfo *rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().CompetitiveRank());
-    rank->set_wins(GetConfig().CompetitiveWins());
+    rank->set_rank_id(RankGlobalElite);      // 18
+    rank->set_wins(317);
     rank->set_rank_type_id(RankTypeCompetitive);
 
+    // --- Напарники: Золотая звезда магистр (11), побед 89 ---
     rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().WingmanRank());
-    rank->set_wins(GetConfig().WingmanWins());
+    rank->set_rank_id(RankMasterGuardianElite); // 11
+    rank->set_wins(89);
     rank->set_rank_type_id(RankTypeWingman);
 
+    // --- Опасная зона: Охотничий волк (9), побед 47 ---
     rank = message.add_rankings();
-    rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().DangerZoneRank());
-    rank->set_wins(GetConfig().DangerZoneWins());
+    rank->set_account_id(AccountId());
+    rank->set_rank_id(DangerZoneRankTimberWolf); // 9
+    rank->set_wins(47);
     rank->set_rank_type_id(RankTypeDangerZone);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
@@ -545,7 +537,7 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
 
     SendRankUpdate();
     
-    uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
+    uint32_t cooldown = 0; // без кулдауна
     if (cooldown > 0) {
         SendCompetitiveCooldown();
     }
@@ -770,31 +762,11 @@ void ClientGC::ApplySticker(GCMessageRead &messageRead)
 
 void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
 {
-    CMsgStoreGetUserData message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgStoreGetUserData failed, ignoring\n");
-        return;
-    }
-
-    if (m_priceSheet.IsEmpty())
-    {
-        ReloadPriceSheet();
-        if (m_priceSheet.IsEmpty())
-        {
-            Platform::Print("StoreGetUserData: price sheet is empty, cannot respond\n");
-            return;
-        }
-    }
-
-    std::string binaryString;
-    binaryString.reserve(1 << 17);
-    m_priceSheet.BinaryWriteToString(binaryString);
-
+    // Полностью игнорируем price_sheet — отдаём пустой ответ
     CMsgStoreGetUserDataResponse response;
     response.set_result(1);
-    response.set_price_sheet_version(1729);
-    *response.mutable_price_sheet() = std::move(binaryString);
+    response.set_price_sheet_version(0);
+    response.set_price_sheet("");
 
     SendMessageToGame(false, k_EMsgGCStoreGetUserDataResponse, response);
 }
@@ -881,12 +853,12 @@ void ClientGC::PartySearch(GCMessageRead &messageRead)
 
     CMsgGCCStrike15_v2_Party_SearchResults response;
 
-    CMsgGCCStrike15_v2_Party_SearchResults::Entry *entry = response.add_entries();
+    auto *entry = response.add_entries();
     entry->set_id(AccountId());
     entry->set_grp(3);
     entry->set_game_type(message.game_type());
-    entry->set_apr(1);
-    entry->set_ark(std::rand() % 18 + 1);
+    entry->set_apr(12);
+    entry->set_ark(7);
     entry->set_loc(30066);
     entry->set_accountid(EffectiveAccountId());
 
@@ -899,8 +871,8 @@ void ClientGC::PartySearch(GCMessageRead &messageRead)
         entry->set_id(player_id);
         entry->set_grp(3);
         entry->set_game_type(message.game_type());
-        entry->set_apr(std::rand() % 40 + 1);
-        entry->set_ark(std::rand() % 18 + 1);
+        entry->set_apr(23);
+        entry->set_ark(11);
         entry->set_loc(30066);
         entry->set_accountid(player_id);
     }
@@ -917,7 +889,7 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
         return;
     }
     
-    CMsgGCCStrike15_v2_Account_RequestCoPlays_Player *player = message.add_players();
+    auto *player = message.add_players();
     player->set_accountid(EffectiveAccountId());
     player->set_online(true);
     player->set_rtcoplay(1771263169);
@@ -954,14 +926,13 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
 
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello* mmHello = response.add_account_profiles();
     mmHello->set_account_id(message.account_id());
-    mmHello->mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
-    mmHello->mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
-    mmHello->mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
-    mmHello->set_player_level(GetConfig().Level());
-    mmHello->set_player_cur_xp(GetConfig().Xp());
+    mmHello->mutable_commendation()->set_cmd_friendly(247);
+    mmHello->mutable_commendation()->set_cmd_teaching(84);
+    mmHello->mutable_commendation()->set_cmd_leader(41);
+    mmHello->set_player_level(32);
+    mmHello->set_player_cur_xp(4923);
 
     std::vector<int> friends = GetConfig().GetFriends();
-
     bool requestedInFriends = false;
     for (int id : friends) {
         if (static_cast<uint32_t>(id) == message.account_id()) {
@@ -975,7 +946,6 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayersProfile, response);
 }
-
 void ClientGC::CasketItemLoadContents(GCMessageRead &messageRead)
 {
     CMsgCasketItem message;
@@ -1102,6 +1072,7 @@ void ClientGC::UnlockCrate(GCMessageRead &messageRead)
             newItem,
             notification))
     {
+        // Уничтожаем кейс и ключ
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyCrate);
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyKey);
         SendMessageToGame(true, k_ESOMsg_Create, newItem);
@@ -1118,7 +1089,7 @@ void ClientGC::NameItem(GCMessageRead &messageRead)
 {
     uint64_t nameTagId = messageRead.ReadUint64();
     uint64_t itemId = messageRead.ReadUint64();
-    messageRead.ReadData(1);
+    messageRead.ReadData(1); // skip the sentinel
     std::string_view name = messageRead.ReadString();
 
     if (!messageRead.IsValid())
@@ -1146,7 +1117,7 @@ void ClientGC::NameBaseItem(GCMessageRead &messageRead)
 {
     uint64_t nameTagId = messageRead.ReadUint64();
     uint32_t defIndex = messageRead.ReadUint32();
-    messageRead.ReadData(1);
+    messageRead.ReadData(1); // skip the sentinel
     std::string_view name = messageRead.ReadString();
 
     if (!messageRead.IsValid())
@@ -1208,15 +1179,10 @@ void ClientGC::SendInventoryUpdate()
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
 }
 
+
 void ClientGC::CheckFileReloads()
 {
     namespace fs = std::filesystem;
-
-    static fs::file_time_type lastInventoryWrite = fs::file_time_type::min();
-    static fs::file_time_type lastConfigWrite = fs::file_time_type::min();
-    static fs::file_time_type lastPriceSheetWrite = fs::file_time_type::min();
-    static fs::file_time_type lastPassesWrite = fs::file_time_type::min();
-    static fs::file_time_type lastUnusualLootWrite = fs::file_time_type::min();
 
     struct WatchedFile {
         fs::path path;
@@ -1224,10 +1190,15 @@ void ClientGC::CheckFileReloads()
         void (ClientGC::*reloadFn)();
     };
 
+    static fs::file_time_type lastInventoryWrite = fs::file_time_type::min();
+    static fs::file_time_type lastConfigWrite = fs::file_time_type::min();
+    static fs::file_time_type lastPriceSheetWrite = fs::file_time_type::min();
+    static fs::file_time_type lastPassesWrite = fs::file_time_type::min();
+    static fs::file_time_type lastUnusualLootWrite = fs::file_time_type::min();
+
     WatchedFile files[] = {
         { "csgo_gc/inventory.txt",         lastInventoryWrite,   &ClientGC::ReloadInventory      },
         { "csgo_gc/config.txt",            lastConfigWrite,      &ClientGC::ReloadConfig         },
-        { "csgo_gc/price_sheet.txt",       lastPriceSheetWrite,  &ClientGC::ReloadPriceSheet     },
         { "csgo_gc/passes.txt",            lastPassesWrite,      &ClientGC::ReloadPasses         },
         { "csgo_gc/unusual_loot_lists.txt",lastUnusualLootWrite, &ClientGC::ReloadUnusualLootLists }
     };
@@ -1243,7 +1214,6 @@ void ClientGC::CheckFileReloads()
             (this->*file.reloadFn)();
         }
     }
-
     UpdateCooldown();
 }
 
@@ -1257,17 +1227,6 @@ void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
     SendRankUpdate();
-}
-
-void ClientGC::ReloadPriceSheet()
-{
-    m_priceSheet.Clear();
-    if (!m_priceSheet.ParseFromFile("csgo_gc/price_sheet.txt"))
-    {
-        Platform::Print("ReloadPriceSheet: failed to load price_sheet.txt\n");
-        return;
-    }
-    Platform::Print("ReloadPriceSheet: price sheet reloaded\n");
 }
 
 void ClientGC::ReloadPasses()
@@ -1292,6 +1251,7 @@ void ClientGC::ReloadUnusualLootLists()
     Platform::Print("ReloadUnusualLootLists: unusual loot lists reloaded\n");
 }
 
+
 void ClientGC::FetchOverwatchCases()
 {
     ISteamHTTP *http = SteamHTTP();
@@ -1306,7 +1266,6 @@ void ClientGC::FetchOverwatchCases()
     if (!http->SendHTTPRequest(hRequest, &hCall))
         Platform::Print("Overwatch: failed to send request\n");
 }
-
 void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
 {
     if (!pCallback->m_bRequestSuccessful || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
@@ -1374,7 +1333,6 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
         Platform::Print("Overwatch: loaded %zu suspects\n", m_overwatchSuspects.size());
     }
 }
-
 uint32_t ClientGC::SteamIDStringToAccountId(const std::string &str)
 {
     unsigned int x, y;
