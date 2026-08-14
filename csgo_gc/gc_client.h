@@ -64,11 +64,7 @@ private:
     void BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message);
     void BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
         const CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &matchmakingHello);
-    void SendRankUpdate();
-    void OnMatchmakingPing(GCMessageRead &messageRead);
-    void OnMatchmakingStart(GCMessageRead &messageRead);
-    void OnMatchmakingStop(GCMessageRead &messageRead);
-    void SendMatchmakingUpdate();
+    
     const uint64_t m_steamId;
     void ProcessGiftUse(uint64_t giftId);
     Inventory m_inventory;
@@ -106,9 +102,4 @@ private:
     std::chrono::steady_clock::time_point m_cooldownEndTime;
     void SendCompetitiveCooldown();
     void UpdateCooldown();
-
-    // --- НОВЫЕ ПОЛЯ ДЛЯ ДИНАМИЧЕСКОЙ СТАТИСТИКИ ---
-    bool m_hasCompletedMatch{ false };
-    void OnMatchEnd(GCMessageRead &messageRead);
-    // ---------------------------------------------
 };
