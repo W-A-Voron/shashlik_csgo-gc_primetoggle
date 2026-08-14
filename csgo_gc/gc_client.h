@@ -15,7 +15,7 @@ public:
     ~ClientGC();
     void CheckFileReloads();
 
-     uint64_t GetSteamId() const { return m_steamId; }   // now public
+    uint64_t GetSteamId() const { return m_steamId; }
 
     // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
@@ -103,7 +103,7 @@ private:
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
     void SendMatchmakingHelloUpdate();
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
-    uint32_t EffectiveAccountId() const;
+    uint32_t EffectiveAccountId() const; // ОБЪЯВЛЕНИЕ ДОБАВЛЕНО
     std::chrono::steady_clock::time_point m_matchmakingStartTime;
     bool m_matchmakingReservationSent = false;
     uint64_t m_matchmakingReservationId = 0;
