@@ -1,210 +1,30 @@
 #include "stdafx.h"
-#include "gc_client.h"
+#include "gc_server.h"
+#include "gc_const.h"
+#include "gc_const_csgo.h"
 #include "graffiti.h"
-#include "keyvalue.h"
-#include <filesystem>
-#include "case_opening.h"
-#include <steam/isteamhttp.h>
-#include "steam_hook.h"
 
-// ------------------------------------------------
-// Встроенные данные (заменяют config.txt и price_sheet.txt)
-// ------------------------------------------------
+// yuck!! needed for CSteamID (construct full id from account id)
+#include "steam/steamclientpublic.h"
+#include "networking_server.h"
 
-// Ранги (НЕ круглые числа)
-constexpr int CONFIG_COMPETITIVE_RANK = 12;
-constexpr int CONFIG_COMPETITIVE_WINS = 151;
-constexpr int CONFIG_WINGMAN_RANK = 10;
-constexpr int CONFIG_WINGMAN_WINS = 52;
-constexpr int CONFIG_DANGERZONE_RANK = 7;
-constexpr int CONFIG_DANGERZONE_WINS = 37;
-
-constexpr bool CONFIG_DESTROY_USED_ITEMS = true;
-
-constexpr int CONFIG_COMMENDED_FRIENDLY = 247;
-constexpr int CONFIG_COMMENDED_TEACHING = 84;
-constexpr int CONFIG_COMMENDED_LEADER = 41;
-constexpr int CONFIG_PLAYER_LEVEL = 24;
-constexpr int CONFIG_PLAYER_XP = 4237;
-
-static const std::vector<RarityWeight> CONFIG_RARITY_WEIGHTS = {
-    { ItemSchema::RarityCommon,   10000000 },
-    { ItemSchema::RarityUncommon, 2000000 },
-    { ItemSchema::RarityRare,     400000 },
-    { ItemSchema::RarityMythical, 80000 },
-    { ItemSchema::RarityLegendary,16000 },
-    { ItemSchema::RarityAncient,  3200 },
-    { ItemSchema::RarityUnusual,  1280 },
-};
-
-// Встроенный бинарный дамп price_sheet.txt (рабочий)
-static const unsigned char EMBEDDED_PRICE_SHEET[] = {
-    0x00, 0x73, 0x74, 0x6F, 0x72, 0x65, 0x00, 0x01, 0x73, 0x74, 0x6F, 0x72, 0x65, 0x5F, 0x62, 0x61,
-    0x6E, 0x6E, 0x65, 0x72, 0x5F, 0x6C, 0x61, 0x79, 0x6F, 0x75, 0x74, 0x00, 0x01, 0x31, 0x32, 0x30,
-    0x30, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74,
-    0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F,
-    0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x30, 0x31, 0x00, 0x06, 0x63, 0x75,
-    0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67,
-    0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00,
-    0x31, 0x00, 0x01, 0x31, 0x32, 0x30, 0x32, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F,
-    0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D,
-    0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32,
-    0x30, 0x33, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61,
-    0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74,
-    0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x30, 0x34, 0x00, 0x06, 0x63,
-    0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E,
-    0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B,
-    0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x30, 0x35, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D,
-    0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08,
-    0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31,
-    0x32, 0x30, 0x36, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D,
-    0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65,
-    0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x30, 0x37, 0x00, 0x06,
-    0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69,
-    0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E,
-    0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x30, 0x38, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F,
-    0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00,
-    0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01,
-    0x31, 0x32, 0x30, 0x39, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72,
-    0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B,
-    0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x31, 0x30, 0x00,
-    0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73,
-    0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69,
-    0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x31, 0x31, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74,
-    0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65,
-    0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00,
-    0x01, 0x31, 0x32, 0x31, 0x32, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F,
-    0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72,
-    0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x31, 0x33,
-    0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00,
-    0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C,
-    0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x31, 0x34, 0x00, 0x06, 0x63, 0x75, 0x73,
-    0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C,
-    0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31,
-    0x00, 0x01, 0x31, 0x32, 0x31, 0x35, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66,
-    0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61,
-    0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x31,
-    0x36, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74,
-    0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F,
-    0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x31, 0x37, 0x00, 0x06, 0x63, 0x75,
-    0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67,
-    0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00,
-    0x31, 0x00, 0x01, 0x31, 0x32, 0x31, 0x38, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F,
-    0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D,
-    0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32,
-    0x31, 0x39, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61,
-    0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74,
-    0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x32, 0x30, 0x00, 0x06, 0x63,
-    0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E,
-    0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B,
-    0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x32, 0x31, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D,
-    0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08,
-    0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31,
-    0x32, 0x32, 0x32, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D,
-    0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65,
-    0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x32, 0x33, 0x00, 0x06,
-    0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69,
-    0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E,
-    0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x32, 0x34, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F,
-    0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00,
-    0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01,
-    0x31, 0x32, 0x32, 0x35, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72,
-    0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B,
-    0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x32, 0x36, 0x00,
-    0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73,
-    0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69,
-    0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x32, 0x37, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74,
-    0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65,
-    0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00,
-    0x01, 0x31, 0x32, 0x32, 0x38, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F,
-    0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72,
-    0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x32, 0x39,
-    0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00,
-    0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C,
-    0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x01, 0x31, 0x32, 0x33, 0x30, 0x00, 0x06, 0x63, 0x75, 0x73,
-    0x74, 0x6F, 0x6D, 0x5F, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C,
-    0x65, 0x00, 0x08, 0x6D, 0x61, 0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31,
-    0x00, 0x01, 0x31, 0x32, 0x33, 0x31, 0x00, 0x06, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, 0x5F, 0x66,
-    0x6F, 0x72, 0x6D, 0x61, 0x74, 0x00, 0x73, 0x69, 0x6E, 0x67, 0x6C, 0x65, 0x00, 0x08, 0x6D, 0x61,
-    0x72, 0x6B, 0x65, 0x74, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x31, 0x00, 0x00, 0x01, 0x65, 0x6E,
-    0x74, 0x72, 0x69, 0x65, 0x73, 0x00, 0x01, 0x4E, 0x61, 0x6D, 0x65, 0x20, 0x54, 0x61, 0x67, 0x00,
-    0x09, 0x69, 0x74, 0x65, 0x6D, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x4E, 0x61, 0x6D, 0x65, 0x20,
-    0x54, 0x61, 0x67, 0x00, 0x0E, 0x63, 0x61, 0x74, 0x65, 0x67, 0x6F, 0x72, 0x79, 0x5F, 0x74, 0x61,
-    0x67, 0x73, 0x00, 0x4D, 0x69, 0x73, 0x63, 0x00, 0x06, 0x70, 0x72, 0x69, 0x63, 0x65, 0x73, 0x00,
-    0x03, 0x52, 0x55, 0x42, 0x00, 0x30, 0x00, 0x01, 0x63, 0x61, 0x73, 0x6B, 0x65, 0x74, 0x00, 0x09,
-    0x69, 0x74, 0x65, 0x6D, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x63, 0x61, 0x73, 0x6B, 0x65, 0x74,
-    0x00, 0x0E, 0x63, 0x61, 0x74, 0x65, 0x67, 0x6F, 0x72, 0x79, 0x5F, 0x74, 0x61, 0x67, 0x73, 0x00,
-    0x4D, 0x69, 0x73, 0x63, 0x00, 0x06, 0x70, 0x72, 0x69, 0x63, 0x65, 0x73, 0x00, 0x03, 0x52, 0x55,
-    0x42, 0x00, 0x30, 0x00, 0x01, 0x57, 0x65, 0x61, 0x70, 0x6F, 0x6E, 0x20, 0x43, 0x61, 0x73, 0x65,
-    0x20, 0x4B, 0x65, 0x79, 0x00, 0x09, 0x69, 0x74, 0x65, 0x6D, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00,
-    0x57, 0x65, 0x61, 0x70, 0x6F, 0x6E, 0x20, 0x43, 0x61, 0x73, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x00,
-    0x0E, 0x63, 0x61, 0x74, 0x65, 0x67, 0x6F, 0x72, 0x79, 0x5F, 0x74, 0x61, 0x67, 0x73, 0x00, 0x4D,
-    0x69, 0x73, 0x63, 0x00, 0x06, 0x70, 0x72, 0x69, 0x63, 0x65, 0x73, 0x00, 0x03, 0x52, 0x55, 0x42,
-    0x00, 0x30, 0x00, 0x01, 0x45, 0x2D, 0x53, 0x70, 0x6F, 0x72, 0x74, 0x73, 0x20, 0x57, 0x65, 0x61,
-    0x70, 0x6F, 0x6E, 0x20, 0x43, 0x61, 0x73, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x20, 0x31, 0x00, 0x09,
-    0x69, 0x74, 0x65, 0x6D, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x45, 0x2D, 0x53, 0x70, 0x6F, 0x72,
-    0x74, 0x73, 0x20, 0x57, 0x65, 0x61, 0x70, 0x6F, 0x6E, 0x20, 0x43, 0x61, 0x73, 0x65, 0x20, 0x4B,
-    0x65, 0x79, 0x20, 0x31, 0x00, 0x0E, 0x63, 0x61, 0x74, 0x65, 0x67, 0x6F, 0x72, 0x79, 0x5F, 0x74,
-    0x61, 0x67, 0x73, 0x00, 0x4D, 0x69, 0x73, 0x63, 0x00, 0x06, 0x70, 0x72, 0x69, 0x63, 0x65, 0x73,
-    0x00, 0x03, 0x52, 0x55, 0x42, 0x00, 0x30, 0x00, 0x01, 0x53, 0x74, 0x69, 0x63, 0x6B, 0x65, 0x72,
-    0x20, 0x43, 0x72, 0x61, 0x74, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x00, 0x09, 0x69, 0x74, 0x65, 0x6D,
-    0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x53, 0x74, 0x69, 0x63, 0x6B, 0x65, 0x72, 0x20, 0x43, 0x72,
-    0x61, 0x74, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x00, 0x0E, 0x63, 0x61, 0x74, 0x65, 0x67, 0x6F, 0x72,
-    0x79, 0x5F, 0x74, 0x61, 0x67, 0x73, 0x00, 0x4D, 0x69, 0x73, 0x63, 0x00, 0x06, 0x70, 0x72, 0x69,
-    0x63, 0x65, 0x73, 0x00, 0x03, 0x52, 0x55, 0x42, 0x00, 0x30, 0x00, 0x01, 0x43, 0x6F, 0x6D, 0x6D,
-    0x75, 0x6E, 0x69, 0x74, 0x79, 0x20, 0x43, 0x61, 0x73, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x20, 0x31,
-    0x00, 0x09, 0x69, 0x74, 0x65, 0x6D, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x43, 0x6F, 0x6D, 0x6D,
-    0x75, 0x6E, 0x69, 0x74, 0x79, 0x20, 0x43, 0x61, 0x73, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x20, 0x31,
-    0x00, 0x0E, 0x63, 0x61, 0x74, 0x65, 0x67, 0x6F, 0x72, 0x79, 0x5F, 0x74, 0x61, 0x67, 0x73, 0x00,
-    0x4D, 0x69, 0x73, 0x63, 0x00, 0x06, 0x70, 0x72, 0x69, 0x63, 0x65, 0x73, 0x00, 0x03, 0x52, 0x55,
-    0x42, 0x00, 0x30, 0x00, 0x01, 0x43, 0x6F, 0x6D, 0x6D, 0x75, 0x6E, 0x69, 0x74, 0x79, 0x20, 0x43,
-    0x61, 0x73, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x20, 0x32, 0x00, 0x09, 0x69, 0x74, 0x65, 0x6D, 0x5F,
-    0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x43, 0x6F, 0x6D, 0x6D, 0x75, 0x6E, 0x69, 0x74, 0x79, 0x20, 0x43,
-    0x61, 0x73, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x20, 0x32, 0x00, 0x0E, 0x63, 0x61, 0x74, 0x65, 0x67,
-    0x6F, 0x72, 0x79, 0x5F, 0x74, 0x61, 0x67, 0x73, 0x00, 0x4D, 0x69, 0x73, 0x63, 0x00, 0x06, 0x70,
-    0x72, 0x69, 0x63, 0x65, 0x73, 0x00, 0x03, 0x52, 0x55, 0x42, 0x00, 0x30, 0x00, 0x01, 0x46, 0x61,
-    0x6C, 0x63, 0x68, 0x69, 0x6F, 0x6E, 0x20, 0x43, 0x61, 0x73, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x00,
-    0x09, 0x69, 0x74, 0x65, 0x6D, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x46, 0x61, 0x6C, 0x63, 0x68,
-    0x69, 0x6F, 0x6E, 0x20, 0x43, 0x61, 0x73, 0x65, 0x20, 0x4B, 0x65, 0x79, 0x00, 0x0E, 0x63, 0x61,
-    0x74, 0x65, 0x67, 0x6F, 0x72, 0x79, 0x5F, 0x74, 0x61, 0x67, 0x73, 0x00, 0x4D, 0x69, 0x73, 0x63,
-    0x00, 0x06, 0x70, 0x72, 0x69, 0x63, 0x65, 0x73, 0x00, 0x03, 0x52, 0x55, 0x42, 0x00, 0x30, 0x00,
-    0x01, 0x73, 0x74, 0x61, 0x74, 0x74, 0x72, 0x61, 0x6B, 0x5F, 0x73, 0x77, 0x61, 0x70, 0x5F, 0x74,
-    0x6F, 0x6F, 0x6C, 0x00, 0x09, 0x69, 0x74, 0x65, 0x6D, 0x5F, 0x6C, 0x69, 0x6E, 0x6B, 0x00, 0x73,
-    0x74, 0x61, 0x74, 0x74, 0x72, 0x61, 0x6B, 0x5F, 0x73, 0x77, 0x61, 0x70, 0x5F, 0x74, 0x6F, 0x6F,
-    0x6C, 0x00, 0x0E, 0x63, 0x61, 0x74, 0x65, 0x67, 0x6F, 0x72, 0x79, 0x5F, 0x74, 0x61, 0x67, 0x73,
-    0x00, 0x4D, 0x69, 0x73, 0x63, 0x00, 0x06, 0x70, 0x72, 0x69, 0x63, 0x65, 0x73, 0x00, 0x03, 0x52,
-    0x55, 0x42, 0x00, 0x30, 0x00, 0x00, 0x01, 0x73, 0x74, 0x6F, 0x72, 0x65, 0x5F, 0x6D, 0x65, 0x74,
-    0x61, 0x64, 0x61, 0x74, 0x61, 0x00, 0x01, 0x63, 0x61, 0x74, 0x65, 0x67, 0x6F, 0x72, 0x69, 0x65,
-    0x73, 0x00, 0x01, 0x4D, 0x69, 0x73, 0x63, 0x00, 0x0C, 0x6C, 0x61, 0x62, 0x65, 0x6C, 0x5F, 0x74,
-    0x6F, 0x6B, 0x65, 0x6E, 0x00, 0x23, 0x53, 0x74, 0x6F, 0x72, 0x65, 0x5F, 0x4D, 0x69, 0x73, 0x63,
-    0x00, 0x04, 0x68, 0x6F, 0x6D, 0x65, 0x00, 0x31, 0x00, 0x07, 0x64, 0x65, 0x66, 0x61, 0x75, 0x6C,
-    0x74, 0x00, 0x31, 0x00, 0x00, 0x00
-};
-static const size_t EMBEDDED_PRICE_SHEET_SIZE = sizeof(EMBEDDED_PRICE_SHEET);
-
-// ------------------------------------------------
-// ClientGC (основной класс)
-// ------------------------------------------------
-
-ClientGC::ClientGC(uint64_t steamId)
-    : m_steamId{ steamId }
-    , m_inventory{ m_steamId }
-    , m_httpCallback(this, &ClientGC::OnOverwatchHTTPResponse)
+ServerGC::ServerGC()
 {
+    // also called from ClientGC's constructor
     Graffiti::Initialize();
-    StartThread();
-    FetchOverwatchCases();
 
-    Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
+    StartThread();
+
+    Platform::Print("ServerGC spawned\n");
 }
 
-ClientGC::~ClientGC()
+ServerGC::~ServerGC()
 {
     StopThread();
-    Platform::Print("ClientGC destroyed\n");
+    Platform::Print("ServerGC destroyed\n");
 }
 
-void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer)
+void ServerGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer)
 {
     switch (type)
     {
@@ -213,11 +33,11 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
         break;
 
     case GCEvent::NetMessage:
-        HandleNetMessage(buffer.data(), static_cast<uint32_t>(buffer.size()));
+        HandleNetMessage(id, buffer.data(), static_cast<uint32_t>(buffer.size()));
         break;
 
-    case GCEvent::SOCacheRequest:
-        HandleSOCacheRequest();
+    case GCEvent::ClientSOCacheUnsubscribe:
+        HandleClientSOCacheUnsubscribe(id);
         break;
 
     default:
@@ -226,91 +46,7 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t>
     }
 }
 
-void ClientGC::SendCompetitiveCooldown()
-{
-    uint32_t seconds = 0;
-    if (m_isCooldownActive) {
-        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
-            m_cooldownEndTime - std::chrono::steady_clock::now()).count();
-        seconds = (remaining > 0) ? static_cast<uint32_t>(remaining) : 0;
-        if (seconds == 0) {
-            m_isCooldownActive = false;
-        }
-    }
-
-    CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
-    penalty.set_account_id(EffectiveAccountId());
-    penalty.set_reason(0); // competitive cooldown
-    penalty.set_seconds(seconds);
-    penalty.set_communication_cooldown(false);
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
-}
-
-void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
-{
-    SendMatchmakingUpdate();
-}
-
-void ClientGC::SendMatchmakingUpdate()
-{
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
-    update.set_matchmaking(m_isSearching ? 1 : 0);
-
-    auto* stats = update.mutable_global_stats();
-    stats->set_players_searching(1000);
-    stats->set_search_time_avg(60);
-
-    auto* detail = stats->add_search_statistics();
-    detail->set_game_type(0);
-    detail->set_search_time_avg(60);
-    detail->set_players_searching(1000);
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
-}
-
-void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
-{
-    uint32_t cooldown = 0;
-    if (cooldown > 0)
-    {
-        m_isSearching = false;
-        m_isCooldownActive = true;
-        m_cooldownEndTime = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown);
-
-        SendMatchmakingUpdate();
-        SendCompetitiveCooldown();
-        Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
-        return;
-    }
-
-    m_isSearching = true;
-    SendMatchmakingUpdate();
-}
-
-void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
-{
-    m_isSearching = false;
-    SendMatchmakingUpdate();
-}
-
-void ClientGC::SendMatchmakingReservation()
-{
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
-    reserve.set_serverid(0x12345678);
-    reserve.set_direct_udp_ip(0xC0A8000E);
-    reserve.set_direct_udp_port(27019);
-    reserve.set_reservationid(++m_matchmakingReservationId);
-    reserve.set_map("de_dust2");
-    reserve.set_server_address("192.168.0.14:27019");
-    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *sub = reserve.mutable_reservation();
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
-    m_matchmakingReservationSent = true;
-
-    Platform::Print("Sent matchmaking reservation to %s:%d\n", "192.168.0.14", 27019);
-}
-
-void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
+void ServerGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 {
     GCMessageRead messageRead{ type, data, size };
     if (!messageRead.IsValid())
@@ -323,548 +59,204 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     {
         switch (messageRead.TypeUnmasked())
         {
-        case k_EMsgGCClientHello:
-            OnClientHello(messageRead);
+        case k_EMsgGCServerHello:
+            OnServerHello(messageRead);
             break;
 
-        case k_EMsgGCAdjustItemEquippedState:
-            AdjustItemEquippedState(messageRead);
+        case k_EMsgGCCStrike15_v2_Server2GCClientValidate:
+            // server doesn't want a response so ignore
             break;
 
-        case k_EMsgGCCStrike15_v2_ClientPlayerDecalSign:
-            ClientPlayerDecalSign(messageRead);
-            break;
-
-        case k_EMsgGCUseItemRequest:
-            UseItemRequest(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_ClientRequestJoinServerData:
-            ClientRequestJoinServerData(messageRead);
-            break;
-
-        case k_EMsgGCSetItemPositions:
-            SetItemPositions(messageRead);
-            break;
-
-        case k_EMsgGCApplySticker:
-            ApplySticker(messageRead);
-            break;
-
-        case k_EMsgGCStoreGetUserData:
-            StoreGetUserData(messageRead);
-            break;
-
-        case k_EMsgGCStorePurchaseInit:
-            StorePurchaseInit(messageRead);
-            break;
-
-        case k_EMsgGCStorePurchaseFinalize:
-            StorePurchaseFinalize(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_Party_Search:
-            PartySearch(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_Account_RequestCoPlays:
-            RequestCoPlays(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_ClientRequestPlayersProfile:
-            ClientRequestPlayersProfile(messageRead);
-            break;
-
-        case k_EMsgGCCasketItemLoadContents:
-            CasketItemLoadContents(messageRead);
-            break;
-
-        case k_EMsgGCCasketItemAdd:
-            CasketItemAdd(messageRead);
-            break;
-
-        case k_EMsgGCCasketItemExtract:
-            CasketItemExtract(messageRead);
-            break;
-
-        case k_EMsgGCStatTrakSwap:
-            StatTrakSwap(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_MatchmakingClient2ServerPing:
-            OnMatchmakingPing(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_MatchmakingStart:
-            OnMatchmakingStart(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_MatchmakingStop:
-            OnMatchmakingStop(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseStatus:
-            OnOverwatchCaseStatus(messageRead);
-            break;
-
-        case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate:
-            OnOverwatchCaseUpdate(messageRead);
-            break;
-
-        default:
-            Platform::Print("ClientGC::HandleMessage: unhandled protobuf message %s\n",
-                MessageName(messageRead.TypeUnmasked()));
-            break;
-        }
-    }
-    else
-    {
-        switch (messageRead.TypeUnmasked())
-        {
-        case k_EMsgGCDelete:
-            DeleteItem(messageRead);
-            break;
-
-        case k_EMsgGCUnlockCrate:
-            UnlockCrate(messageRead);
-            break;
-
-        case k_EMsgGCNameItem:
-            NameItem(messageRead);
-            break;
-
-        case k_EMsgGCNameBaseItem:
-            NameBaseItem(messageRead);
-            break;
-
-        case k_EMsgGCRemoveItemName:
-            RemoveItemName(messageRead);
-            break;
-
-        default:
-            Platform::Print("ClientGC::HandleMessage: unhandled struct message %s\n",
-                MessageName(messageRead.TypeUnmasked()));
-            break;
-        }
-    }
-}
-
-void ClientGC::SendMatchmakingHelloUpdate()
-{
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
-    BuildMatchmakingHello(mmHello);
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
-}
-
-void ClientGC::UpdateCooldown()
-{
-    if (!m_isCooldownActive)
-        return;
-    auto now = std::chrono::steady_clock::now();
-    if (now >= m_cooldownEndTime) {
-        m_isCooldownActive = false;
-        SendCompetitiveCooldown();
-        Platform::Print("Competitive cooldown expired.\n");
-    }
-}
-
-void ClientGC::ProcessGiftUse(uint64_t giftId)
-{
-    const CSOEconItem *giftItem = m_inventory.GetItem(giftId);
-    if (!giftItem)
-    {
-        Platform::Print("Gift item not found\n");
-        return;
-    }
-
-    uint32_t defIndex = giftItem->def_index();
-    int numItems = 1;
-    if (defIndex == 1210) numItems = 1;
-    else if (defIndex == 1211) numItems = 9;
-    else if (defIndex == 1215) numItems = 25;
-    else {
-        Platform::Print("Unknown gift type\n");
-        return;
-    }
-
-    uint32_t series = 0;
-    uint32_t attrDef = m_inventory.GetItemSchema().GetAttributeDefIndex("set supply crate series");
-    if (attrDef)
-    {
-        for (const auto &attr : giftItem->attribute())
-        {
-            if (attr.def_index() == attrDef)
-            {
-                series = m_inventory.GetItemSchema().AttributeUint32(&attr);
-                break;
-            }
-        }
-    }
-
-    if (series == 0)
-    {
-        Platform::Print("Gift has no supply crate series\n");
-        return;
-    }
-
-    const LootList *lootList = m_inventory.GetItemSchema().GetLootListBySeries(series);
-    if (!lootList)
-    {
-        Platform::Print("No loot list for series %u\n", series);
-        return;
-    }
-
-    CMsgSOMultipleObjects updateMultiple;
-    CMsgSOSingleObject destroy;
-    CMsgGCItemCustomizationNotification notification;
-    notification.set_request(k_EGCItemCustomizationNotification_Gift);
-
-    CaseOpening caseOpening(m_inventory.GetItemSchema(), m_inventory.GetRandom());
-
-    for (int i = 0; i < numItems; i++)
-    {
-        CSOEconItem newItemProto;
-        if (!caseOpening.SelectItemFromLootList(*lootList, newItemProto))
-        {
-            Platform::Print("Failed to select item from loot list\n");
-            continue;
-        }
-
-        CSOEconItem &createdItem = m_inventory.CreateItem(newItemProto);
-        m_inventory.AddToMultipleObjects(updateMultiple, SOTypeItem, createdItem);
-        notification.add_item_id(createdItem.id());
-    }
-
-    if (CONFIG_DESTROY_USED_ITEMS)
-    {
-        m_inventory.RemoveItem(giftId, destroy);
-    }
-
-    if (updateMultiple.objects_modified_size() > 0)
-    {
-        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, updateMultiple);
-        SendMessageToGame(false, k_ESOMsg_UpdateMultiple, updateMultiple);
-    }
-
-    if (destroy.has_type_id())
-    {
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-        SendMessageToGame(false, k_ESOMsg_Destroy, destroy);
-    }
-
-    if (notification.item_id_size() > 0)
-    {
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-}
-
-void ClientGC::HandleNetMessage(const void *data, uint32_t size)
-{
-    GCMessageRead messageRead{ 0, data, size };
-    if (!messageRead.IsValid())
-    {
-        assert(false);
-        return;
-    }
-
-    if (messageRead.IsProtobuf())
-    {
-        switch (messageRead.TypeUnmasked())
-        {
         case k_EMsgGC_IncrementKillCountAttribute:
             IncrementKillCountAttribute(messageRead);
-            return;
+            break;
+        case k_EMsgGCCStrike15_v2_MatchmakingServerReservationResponse:
+            OnMatchmakingServerReservationResponse(messageRead);
+            break;
+            
+        default:
+            Platform::Print("ServerGC::HandleMessage: unhandled protobuf message %s)\n",
+                MessageName(messageRead.TypeUnmasked()));
+            break;
         }
     }
-
-    Platform::Print("ClientGC::HandleNetMessage: unhandled protobuf message %s\n",
-        MessageName(messageRead.TypeUnmasked()));
 }
 
-void ClientGC::HandleSOCacheRequest()
+void ServerGC::HandleClientSOCacheUnsubscribe(uint64_t steamId)
 {
-    CMsgSOCacheSubscribed message;
-    m_inventory.BuildCacheSubscription(message, CONFIG_PLAYER_LEVEL, true);
+    Platform::Print("HandleClientSOCacheUnsubscribe: %llu\n", steamId);
 
-    GCMessageWrite messageWrite{ k_ESOMsg_CacheSubscribed, message };
-    PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
+    CMsgSOCacheUnsubscribed message;
+    message.mutable_owner_soid()->set_type(SoIdTypeSteamId);
+    message.mutable_owner_soid()->set_id(steamId);
+
+    GCMessageWrite write{ k_ESOMsg_CacheUnsubscribed, message };
+    PostToHost(HostEvent::Message, write.TypeMasked(), write.Data(), write.Size());
 }
 
-void ClientGC::SendMessageToGame(bool sendToGameServer, uint32_t type,
-    const google::protobuf::MessageLite &message, uint64_t jobId)
+template<typename T>
+static bool ValidateMessageOwnerSOID(GCMessageRead &messageRead, uint64_t steamId)
 {
-    GCMessageWrite messageWrite{ type, message, jobId };
-
-    if (sendToGameServer)
+    T message;
+    if (!messageRead.ReadProtobuf(message))
     {
-        PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
+        Platform::Print("ValidateMessageOwnerSOID %llu: parsing failed\n", steamId);
+        return false;
     }
 
-    PostToHost(HostEvent::Message, messageWrite.TypeMasked(), messageWrite.Data(), messageWrite.Size());
+    if (message.owner_soid().type() != SoIdTypeSteamId
+        || message.owner_soid().id() != steamId)
+    {
+        Platform::Print("ValidateMessageOwnerSOID %llu: steam id mismatch (message has %llu)\n",
+            steamId, message.owner_soid().id());
+        return false;
+    }
+
+    return true;
 }
 
-constexpr uint32_t MakeAddress(uint32_t v1, uint32_t v2, uint32_t v3, uint32_t v4)
+
+void ServerGC::SendConfirmToClient(uint64_t clientId, const PendingReservation& res)
 {
-    return v4 | (v3 << 8) | (v2 << 16) | (v1 << 24);
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm confirm;
+    confirm.set_token(res.token);
+    confirm.set_stamp(res.stamp);
+    confirm.set_exchange(res.exchange);
+
+    GCMessageWrite write{ 9114, confirm };   // k_EMsgGCCStrike15_v2_MatchmakingGC2ServerConfirm
+    PostToHost(HostEvent::NetMessage, clientId, write.Data(), write.Size());
+    Platform::Print("ServerGC: sent confirm to client %llu (res %llu)\n", clientId, res.exchange);
 }
 
-static void BuildCSWelcome(CMsgCStrike15Welcome &message)
+void ServerGC::CheckPendingReservations()
 {
-    message.set_store_item_hash(136617352);
-    message.set_timeplayedconsecutively(0);
-    message.set_time_first_played(1329845773);
-    message.set_last_time_played(1680260376);
-    message.set_last_ip_address(MakeAddress(127, 0, 0, 1));
+    if (m_pendingReservations.empty())
+        return;
+
+    auto it = m_pendingReservations.begin();
+    while (it != m_pendingReservations.end())
+    {
+        uint64_t clientId = it->first;
+        if (!m_networking->HasClient(clientId))
+        {
+            SendConfirmToClient(clientId, it->second);
+            it = m_pendingReservations.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
 }
 
-void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
+void ServerGC::OnMatchmakingServerReservationResponse(GCMessageRead &messageRead)
 {
-    message.set_account_id(EffectiveAccountId());
+    CMsgGCCStrike15_v2_MatchmakingServerReservationResponse response;
+    if (!messageRead.ReadProtobuf(response))
+    {
+        Platform::Print("Failed to parse MatchmakingServerReservationResponse\n");
+        return;
+    }
 
-    message.mutable_global_stats()->set_players_online(10000);
-    message.mutable_global_stats()->set_servers_online(10000);
-    message.mutable_global_stats()->set_players_searching(1000);
-    message.mutable_global_stats()->set_servers_available(1000);
-    message.mutable_global_stats()->set_ongoing_matches(999);
-    message.mutable_global_stats()->set_search_time_avg(60);
+    // The response does not contain an account ID. Use the reservationid as a key.
+    // (A proper implementation would maintain a mapping from reservationid to client steamid.)
+    uint64_t clientId = response.reservationid();
 
-    auto* stats = message.mutable_global_stats();
-    stats->set_players_searching(1000);
-    stats->set_servers_available(1000);
-    stats->set_search_time_avg(60);
+    Platform::Print("ServerGC: received reservation response for res %llu, map %s, client %llu\n",
+                    response.reservationid(), response.map().c_str(), clientId);
 
-    auto* detail = stats->add_search_statistics();
-    detail->set_game_type(6);
-    detail->set_search_time_avg(60);
-    detail->set_players_searching(1000);
+    if (!m_networking->HasClient(clientId))   // pointer -> not .
+    {
+        PendingReservation pending;
+        pending.exchange = response.reservationid();
+        pending.token = 0x12345678;
+        pending.stamp = static_cast<uint32_t>(time(nullptr));
+        m_pendingReservations[clientId] = pending;
+        Platform::Print("ServerGC: pending reservation for client %llu\n", clientId);
+        return;
+    }
 
-    message.mutable_global_stats()->set_main_post_url("");
-    message.mutable_global_stats()->set_required_appid_version(13857);
-    message.mutable_global_stats()->set_pricesheet_version(1680057676);
-    message.mutable_global_stats()->set_twitch_streams_version(2);
-    message.mutable_global_stats()->set_active_tournament_eventid(20);
-    message.mutable_global_stats()->set_active_survey_id(0);
-    message.mutable_global_stats()->set_required_appid_version2(13862);
+    SendConfirmToClient(clientId, { response.reservationid(), 0x12345678, static_cast<uint32_t>(time(nullptr)) });
+}
+void ServerGC::HandleNetMessage(uint64_t steamId, const void *data, uint32_t size)
+{
+    assert(CanHandleNetMessages());
 
-    message.set_vac_banned(false);
-    message.mutable_commendation()->set_cmd_friendly(CONFIG_COMMENDED_FRIENDLY);
-    message.mutable_commendation()->set_cmd_teaching(CONFIG_COMMENDED_TEACHING);
-    message.mutable_commendation()->set_cmd_leader(CONFIG_COMMENDED_LEADER);
-    message.set_player_level(CONFIG_PLAYER_LEVEL);
-    message.set_player_cur_xp(CONFIG_PLAYER_XP);
+    GCMessageRead validate{ 0, data, size };
+    if (!validate.IsValid())
+    {
+        assert(false);
+        return;
+    }
+
+    if (!validate.IsProtobuf())
+    {
+        // all the allowed messages are protobuf based
+        Platform::Print("ServerGC: ignoring non protobuf message %u from %llu\n",
+            validate.TypeUnmasked(), steamId);
+        return;
+    }
+
+    // validate the type and contents
+    bool isValid = false;
+
+    switch (validate.TypeUnmasked())
+    {
+    case k_ESOMsg_Create:
+    case k_ESOMsg_Update:
+    case k_ESOMsg_Destroy:
+        isValid = ValidateMessageOwnerSOID<CMsgSOSingleObject>(validate, steamId);
+        break;
+
+    case k_ESOMsg_CacheSubscribed:
+        isValid = ValidateMessageOwnerSOID<CMsgSOCacheSubscribed>(validate, steamId);
+        break;
+
+    case k_ESOMsg_UpdateMultiple:
+        isValid = ValidateMessageOwnerSOID<CMsgSOMultipleObjects>(validate, steamId);
+        break;
+
+    case k_EMsgGCItemAcknowledged:
+        isValid = true;
+        break;
+    }
+
+    if (!isValid)
+    {
+        Platform::Print("ServerGC: ignoring net message %u from %llu\n",
+            validate.TypeUnmasked(), steamId);
+        return;
+    }
+
+    PostToHost(HostEvent::Message, validate.TypeMasked(), data, size);
 }
 
-void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
-    const CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &matchmakingHello)
+void ServerGC::OnServerHello(GCMessageRead &messageRead)
 {
-    message.set_version(0);
-    message.set_game_data(csWelcome.SerializeAsString());
-    m_inventory.BuildCacheSubscription(*message.add_outofdate_subscribed_caches(), CONFIG_PLAYER_LEVEL, false);
-    message.mutable_location()->set_latitude(65.0133006f);
-    message.mutable_location()->set_longitude(25.4646212f);
-    message.mutable_location()->set_country("RU");
-    message.set_game_data2(matchmakingHello.SerializeAsString());
-    message.set_rtime32_gc_welcome_timestamp(static_cast<uint32_t>(time(nullptr)));
-    message.set_currency(3); // RUB
-    message.set_txn_country_code("RU");
-}
-
-void ClientGC::SendRankUpdate()
-{
-    CMsgGCCStrike15_v2_ClientGCRankUpdate message;
-
-    PlayerRankingInfo *rank = message.add_rankings();
-    rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(CONFIG_COMPETITIVE_RANK);
-    rank->set_wins(CONFIG_COMPETITIVE_WINS);  // 151
-    rank->set_rank_type_id(RankTypeCompetitive);
-
-    rank = message.add_rankings();
-    rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(CONFIG_WINGMAN_RANK);
-    rank->set_wins(CONFIG_WINGMAN_WINS);      // 52
-    rank->set_rank_type_id(RankTypeWingman);
-
-    rank = message.add_rankings();
-    rank->set_account_id(AccountId());
-    rank->set_rank_id(CONFIG_DANGERZONE_RANK);
-    rank->set_wins(CONFIG_DANGERZONE_WINS);   // 37
-    rank->set_rank_type_id(RankTypeDangerZone);
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
-}
-
-void ClientGC::OnClientHello(GCMessageRead &messageRead)
-{
-    CMsgClientHello hello;
+    CMsgServerHello hello;
     if (!messageRead.ReadProtobuf(hello))
     {
-        Platform::Print("Parsing CMsgClientHello failed, ignoring\n");
+        Platform::Print("Parsing CMsgServerHello failed, ignoring\n");
         return;
     }
+
+    // we don't care about anything in this message, just reply
 
     CMsgCStrike15Welcome csWelcome;
-    BuildCSWelcome(csWelcome);
+    csWelcome.set_gscookieid(GameServerCookieId);
 
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
-    BuildMatchmakingHello(mmHello);
+    CMsgClientWelcome welcome;
+    welcome.set_version(0);
+    welcome.set_game_data(csWelcome.SerializeAsString());
+    welcome.set_rtime32_gc_welcome_timestamp(static_cast<uint32_t>(time(nullptr)));
 
-    CMsgClientWelcome clientWelcome;
-    BuildClientWelcome(clientWelcome, csWelcome, mmHello);
+    GCMessageWrite write{ k_EMsgGCServerWelcome, welcome };
+    PostToHost(HostEvent::Message, write.TypeMasked(), write.Data(), write.Size());
 
-    SendMessageToGame(false, k_EMsgGCClientWelcome, clientWelcome);
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
-    SendRankUpdate();
-
-    uint32_t cooldown = 0;
-    if (cooldown > 0) {
-        SendCompetitiveCooldown();
-    }
+    m_receivedHello.store(true, std::memory_order_release);
 }
 
-void ClientGC::AdjustItemEquippedState(GCMessageRead &messageRead)
-{
-    CMsgAdjustItemEquippedState message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgAdjustItemEquippedState failed, ignoring\n");
-        return;
-    }
-
-    CMsgSOMultipleObjects update;
-    if (!m_inventory.EquipItem(message.item_id(), message.new_class(), message.new_slot(), update))
-    {
-        assert(false);
-        return;
-    }
-
-    SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
-}
-
-void ClientGC::ClientPlayerDecalSign(GCMessageRead &messageRead)
-{
-    CMsgGCCStrike15_v2_ClientPlayerDecalSign message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgGCCStrike15_v2_ClientPlayerDecalSign failed, ignoring\n");
-        return;
-    }
-
-    if (!Graffiti::SignMessage(*message.mutable_data()))
-    {
-        Platform::Print("Could not sign graffiti! it won't appear\n");
-        return;
-    }
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientPlayerDecalSign, message);
-}
-
-void ClientGC::UseItemRequest(GCMessageRead &messageRead)
-{
-    CMsgUseItem message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgUseItem failed, ignoring\n");
-        return;
-    }
-
-    uint64_t itemId = message.item_id();
-
-    const CSOEconItem *giftItem = m_inventory.GetItem(itemId);
-    if (giftItem)
-    {
-        uint32_t defIndex = giftItem->def_index();
-        if (defIndex == 1210 || defIndex == 1211 || defIndex == 1215)
-        {
-            ProcessGiftUse(itemId);
-            return;
-        }
-    }
-
-    CMsgSOSingleObject destroy;
-    CMsgSOMultipleObjects updateMultiple;
-    CMsgGCItemCustomizationNotification notification;
-
-    if (m_inventory.UseItem(itemId, destroy, updateMultiple, notification))
-    {
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, updateMultiple);
-
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-}
-
-static void AddressString(uint32_t ip, uint32_t port, char *buffer, size_t bufferSize)
-{
-    snprintf(buffer, bufferSize,
-        "%u.%u.%u.%u:%u\n",
-        (ip >> 24) & 0xff,
-        (ip >> 16) & 0xff,
-        (ip >> 8) & 0xff,
-        ip & 0xff,
-        port);
-}
-
-void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
-{
-    CMsgGCCStrike15_v2_ClientRequestJoinServerData request;
-    if (!messageRead.ReadProtobuf(request))
-    {
-        Platform::Print("Parsing CMsgGCCStrike15_v2_ClientRequestJoinServerData failed, ignoring\n");
-        return;
-    }
-
-    CMsgGCCStrike15_v2_ClientRequestJoinServerData response = request;
-
-    if (m_matchmakingReservationSent) {
-        response.mutable_res()->set_serverid(0x12345678);
-        response.mutable_res()->set_direct_udp_ip(0xC0A8000E);
-        response.mutable_res()->set_direct_udp_port(27019);
-        response.mutable_res()->set_reservationid(m_matchmakingReservationId);
-        response.mutable_res()->set_server_address("192.168.0.14:27019");
-    } else {
-        response.mutable_res()->set_serverid(request.version());
-        response.mutable_res()->set_direct_udp_ip(request.server_ip());
-        response.mutable_res()->set_direct_udp_port(request.server_port());
-        response.mutable_res()->set_reservationid(GameServerCookieId);
-        char addressString[32];
-        AddressString(request.server_ip(), request.server_port(), addressString, sizeof(addressString));
-        response.mutable_res()->set_server_address(addressString);
-    }
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
-}
-
-void ClientGC::SetItemPositions(GCMessageRead &messageRead)
-{
-    CMsgSetItemPositions message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgSetItemPositions failed, ignoring\n");
-        return;
-    }
-
-    std::vector<CMsgItemAcknowledged> acknowledgements;
-    acknowledgements.reserve(message.item_positions_size());
-
-    CMsgSOMultipleObjects update;
-    if (m_inventory.SetItemPositions(message, acknowledgements, update))
-    {
-        for (const CMsgItemAcknowledged &acknowledgement : acknowledgements)
-        {
-            GCMessageWrite messageWrite{ k_EMsgGCItemAcknowledged, acknowledgement };
-            PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
-        }
-
-        SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
-    }
-    else
-    {
-        assert(false);
-    }
-}
-
-void ClientGC::IncrementKillCountAttribute(GCMessageRead &messageRead)
+void ServerGC::IncrementKillCountAttribute(GCMessageRead &messageRead)
 {
     CMsgIncrementKillCountAttribute message;
     if (!messageRead.ReadProtobuf(message))
@@ -873,697 +265,8 @@ void ClientGC::IncrementKillCountAttribute(GCMessageRead &messageRead)
         return;
     }
 
-    assert(message.event_type() == 0);
-
-    CMsgSOSingleObject update;
-    if (m_inventory.IncrementKillCountAttribute(message.item_id(), message.amount(), update))
-    {
-        SendMessageToGame(true, k_ESOMsg_Update, update);
-    }
-    else
-    {
-        assert(false);
-    }
-}
-
-void ClientGC::ApplySticker(GCMessageRead &messageRead)
-{
-    CMsgApplySticker message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgApplySticker failed, ignoring\n");
-        return;
-    }
-
-    assert(!message.item_item_id() != !message.baseitem_defidx());
-
-    CMsgSOSingleObject update, destroy;
-    CMsgGCItemCustomizationNotification notification;
-
-    if (!message.sticker_item_id())
-    {
-        if (m_inventory.ScrapeSticker(message, update, destroy, notification))
-        {
-            if (destroy.has_type_id())
-            {
-                SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-            }
-
-            if (update.has_type_id())
-            {
-                SendMessageToGame(true, k_ESOMsg_Update, update);
-            }
-
-            if (notification.has_request())
-            {
-                SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-            }
-        }
-        else
-        {
-            assert(false);
-        }
-    }
-    else if (m_inventory.ApplySticker(message, update, destroy, notification))
-    {
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-        SendMessageToGame(true, k_ESOMsg_Update, update);
-
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-    else
-    {
-        assert(false);
-    }
-}
-
-void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
-{
-    CMsgStoreGetUserDataResponse response;
-    response.set_result(1);
-    response.set_price_sheet_version(1729);
-    response.set_price_sheet(EMBEDDED_PRICE_SHEET, EMBEDDED_PRICE_SHEET_SIZE);
-
-    SendMessageToGame(false, k_EMsgGCStoreGetUserDataResponse, response);
-}
-
-void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
-{
-    CMsgGCStorePurchaseInit message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgGCStorePurchaseInit failed, ignoring\n");
-        return;
-    }
-
-    uint64_t transactionId = Random{}.Integer<uint64_t>();
-    assert(!m_transactionId);
-    m_transactionId = transactionId;
-    m_transactionItemIds.reserve(message.line_items_size());
-
-    std::vector<CMsgSOSingleObject> inventoryUpdate;
-
-    for (const auto &item : message.line_items())
-    {
-        for (uint32_t i = 0; i < item.quantity(); i++)
-        {
-            uint64_t itemId = m_inventory.PurchaseItem(item.item_def_id(), inventoryUpdate);
-            if (!itemId)
-            {
-                assert(false);
-            }
-            else
-            {
-                m_transactionItemIds.push_back(itemId);
-            }
-        }
-    }
-
-    char url[128];
-    snprintf(url, sizeof(url), "https://checkout.steampowered.com/checkout/approvetxn/%llu/?returnurl=steam", transactionId);
-
-    CMsgGCStorePurchaseInitResponse response;
-    response.set_result(1);
-    response.set_txn_id(transactionId);
-    response.set_url(url);
-    response.mutable_item_ids()->Assign(m_transactionItemIds.begin(), m_transactionItemIds.end());
-
-    SendMessageToGame(false, k_EMsgGCStorePurchaseInitResponse, response, messageRead.JobId());
-
-    for (auto &newItem : inventoryUpdate)
-    {
-        SendMessageToGame(true, k_ESOMsg_Create, newItem);
-    }
-
-    PostToHost(HostEvent::MicroTransactionResponse, 0, nullptr, 0);
-}
-
-void ClientGC::StorePurchaseFinalize(GCMessageRead &messageRead)
-{
-    CMsgGCStorePurchaseFinalize message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgGCStorePurchaseFinalize failed, ignoring\n");
-        return;
-    }
-
-    assert(m_transactionId);
-
-    CMsgGCStorePurchaseFinalizeResponse response;
-    response.set_result(1);
-    response.mutable_item_ids()->Assign(m_transactionItemIds.begin(), m_transactionItemIds.end());
-    SendMessageToGame(false, k_EMsgGCStorePurchaseFinalizeResponse, response, messageRead.JobId());
-
-    m_transactionId = 0;
-}
-
-void ClientGC::PartySearch(GCMessageRead &messageRead)
-{
-    CMsgGCCStrike15_v2_Party_Search message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgGCCStrike15_v2_Party_Search failed, ignoring\n");
-        return;
-    }
-
-    CMsgGCCStrike15_v2_Party_SearchResults response;
-
-    CMsgGCCStrike15_v2_Party_SearchResults::Entry *entry = response.add_entries();
-    entry->set_id(AccountId());
-    entry->set_grp(3);
-    entry->set_game_type(message.game_type());
-    entry->set_apr(1);
-    entry->set_ark(std::rand() % 18 + 1);
-    entry->set_loc(30066);
-    entry->set_accountid(EffectiveAccountId());
-
-    for (uint32_t player_id : GetConfig().GetFriends())
-    {
-        if (AccountId() == player_id) continue;
-
-        entry = response.add_entries();
-        entry->set_id(player_id);
-        entry->set_grp(3);
-        entry->set_game_type(message.game_type());
-        entry->set_apr(std::rand() % 40 + 1);
-        entry->set_ark(std::rand() % 18 + 1);
-        entry->set_loc(30066);
-        entry->set_accountid(player_id);
-    }
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_Party_Search, response);
-}
-
-void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
-{
-    CMsgGCCStrike15_v2_Account_RequestCoPlays message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgGCCStrike15_v2_Account_RequestCoPlays failed, ignoring\n");
-        return;
-    }
-
-    CMsgGCCStrike15_v2_Account_RequestCoPlays_Player *player = message.add_players();
-    player->set_accountid(EffectiveAccountId());
-    player->set_online(true);
-    player->set_rtcoplay(1771263169);
-
-    for (uint32_t player_id : GetConfig().GetFriends())
-    {
-        if (AccountId() == player_id) continue;
-
-        player = message.add_players();
-        player->set_accountid(player_id);
-        player->set_online(true);
-        player->set_rtcoplay(1771262169);
-    }
-
-    message.set_servertime(1771263169);
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_Account_RequestCoPlays, message);
-}
-
-void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
-{
-    CMsgGCCStrike15_v2_ClientRequestPlayersProfile message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgGCCStrike15_v2_ClientRequestPlayersProfile failed, ignoring\n");
-        return;
-    }
-
-    Platform::Print("Requested accountId: %u\n", message.account_id());
-
-    CMsgGCCStrike15_v2_PlayersProfile response;
-    response.set_request_id(message.account_id());
-
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello* mmHello = response.add_account_profiles();
-    mmHello->set_account_id(message.account_id());
-    mmHello->mutable_commendation()->set_cmd_friendly(CONFIG_COMMENDED_FRIENDLY);
-    mmHello->mutable_commendation()->set_cmd_teaching(CONFIG_COMMENDED_TEACHING);
-    mmHello->mutable_commendation()->set_cmd_leader(CONFIG_COMMENDED_LEADER);
-    mmHello->set_player_level(CONFIG_PLAYER_LEVEL);
-    mmHello->set_player_cur_xp(CONFIG_PLAYER_XP);
-
-    std::vector<int> friends = GetConfig().GetFriends();
-    bool requestedInFriends = false;
-    for (int id : friends) {
-        if (static_cast<uint32_t>(id) == message.account_id()) {
-            requestedInFriends = true;
-            break;
-        }
-    }
-    if (!requestedInFriends) {
-        friends.push_back(static_cast<int>(message.account_id()));
-    }
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayersProfile, response);
-}
-
-void ClientGC::CasketItemLoadContents(GCMessageRead &messageRead)
-{
-    CMsgCasketItem message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CasketItemLoadContents::CMsgCasketItem failed, ignoring\n");
-        return;
-    }
-
-    CMsgGCItemCustomizationNotification notification;
-    notification.set_request(k_EGCItemCustomizationNotification_CasketContents);
-    notification.add_item_id(message.casket_item_id());
-
-    SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-}
-
-void ClientGC::CasketItemAdd(GCMessageRead &messageRead)
-{
-    CMsgCasketItem message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CasketItemAdd::CMsgCasketItem failed, ignoring\n");
-        return;
-    }
-
-    CMsgSOSingleObject updateItem, updateCasket;
-    CMsgGCItemCustomizationNotification notification;
-    if (m_inventory.CasketItemAdd(message.casket_item_id(), message.item_item_id(), updateItem, updateCasket, notification))
-    {
-        SendMessageToGame(false, k_ESOMsg_Update, updateItem);
-        SendMessageToGame(false, k_ESOMsg_Update, updateCasket);
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-}
-
-void ClientGC::CasketItemExtract(GCMessageRead &messageRead)
-{
-    CMsgCasketItem message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CasketItemExtract::CMsgCasketItem failed, ignoring\n");
-        return;
-    }
-
-    CMsgSOSingleObject updateItem, updateCasket;
-    CMsgGCItemCustomizationNotification notification;
-    if (m_inventory.CasketItemRemove(message.casket_item_id(), message.item_item_id(), updateItem, updateCasket, notification))
-    {
-        SendMessageToGame(false, k_ESOMsg_Update, updateItem);
-        SendMessageToGame(false, k_ESOMsg_Update, updateCasket);
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-}
-
-void ClientGC::StatTrakSwap(GCMessageRead &messageRead)
-{
-    CMsgApplyStatTrakSwap message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing StatTrakSwap::CMsgApplyStatTrakSwap failed, ignoring\n");
-        return;
-    }
-
-    CMsgSOSingleObject destroy, updateItem1, updateItem2;
-    CMsgGCItemCustomizationNotification notification;
-
-    if (m_inventory.StatTrakSwap(
-            message.tool_item_id(),
-            message.item_1_item_id(),
-            message.item_2_item_id(),
-            destroy,
-            updateItem1,
-            updateItem2,
-            notification))
-    {
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-        SendMessageToGame(true, k_ESOMsg_Update, updateItem1);
-        SendMessageToGame(true, k_ESOMsg_Update, updateItem2);
-
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-}
-
-void ClientGC::DeleteItem(GCMessageRead &messageRead)
-{
-    uint64_t itemId = messageRead.ReadUint64();
-    if (!messageRead.IsValid())
-    {
-        Platform::Print("Parsing CMsgGCDelete failed, ignoring\n");
-        return;
-    }
-
-    CMsgSOSingleObject destroyed;
-    if (m_inventory.RemoveItem(itemId, destroyed))
-    {
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroyed);
-    }
-    else
-    {
-        assert(false);
-    }
-}
-
-void ClientGC::UnlockCrate(GCMessageRead &messageRead)
-{
-    uint64_t keyId = messageRead.ReadUint64();
-    uint64_t crateId = messageRead.ReadUint64();
-    if (!messageRead.IsValid())
-    {
-        Platform::Print("Parsing CMsgGCUnlockCrate failed, ignoring\n");
-        return;
-    }
-
-    Platform::Print("CASE OPENING %llu with %llu\n", crateId, keyId);
-
-    CMsgSOSingleObject destroyCrate, destroyKey, newItem;
-    CMsgGCItemCustomizationNotification notification;
-
-    if (m_inventory.UnlockCrate(
-            crateId,
-            keyId,
-            destroyCrate,
-            destroyKey,
-            newItem,
-            notification))
-    {
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroyCrate);
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroyKey);
-        SendMessageToGame(true, k_ESOMsg_Create, newItem);
-
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-    else
-    {
-        assert(false);
-    }
-}
-
-void ClientGC::NameItem(GCMessageRead &messageRead)
-{
-    uint64_t nameTagId = messageRead.ReadUint64();
-    uint64_t itemId = messageRead.ReadUint64();
-    messageRead.ReadData(1); // skip the sentinel
-    std::string_view name = messageRead.ReadString();
-
-    if (!messageRead.IsValid())
-    {
-        Platform::Print("Parsing CMsgGCNameItem failed, ignoring\n");
-        return;
-    }
-
-    CMsgSOSingleObject update, destroy;
-    CMsgGCItemCustomizationNotification notification;
-    if (m_inventory.NameItem(nameTagId, itemId, name, update, destroy, notification))
-    {
-        SendMessageToGame(true, k_ESOMsg_Update, update);
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-    else
-    {
-        assert(false);
-    }
-}
-
-void ClientGC::NameBaseItem(GCMessageRead &messageRead)
-{
-    uint64_t nameTagId = messageRead.ReadUint64();
-    uint32_t defIndex = messageRead.ReadUint32();
-    messageRead.ReadData(1); // skip the sentinel
-    std::string_view name = messageRead.ReadString();
-
-    if (!messageRead.IsValid())
-    {
-        Platform::Print("Parsing CMsgGCNameBaseItem failed, ignoring\n");
-        return;
-    }
-
-    CMsgSOSingleObject create, destroy;
-    CMsgGCItemCustomizationNotification notification;
-    if (m_inventory.NameBaseItem(nameTagId, defIndex, name, create, destroy, notification))
-    {
-        SendMessageToGame(true, k_ESOMsg_Create, create);
-        SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-    else
-    {
-        assert(false);
-    }
-}
-
-void ClientGC::RemoveItemName(GCMessageRead &messageRead)
-{
-    uint64_t itemId = messageRead.ReadUint64();
-    if (!messageRead.IsValid())
-    {
-        Platform::Print("Parsing CMsgGCRemoveItemName failed, ignoring\n");
-        return;
-    }
-
-    CMsgSOSingleObject update, destroy;
-    CMsgGCItemCustomizationNotification notification;
-    if (m_inventory.RemoveItemName(itemId, update, destroy, notification))
-    {
-        if (update.has_type_id())
-        {
-            SendMessageToGame(true, k_ESOMsg_Update, update);
-        }
-
-        if (destroy.has_type_id())
-        {
-            SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-        }
-
-        SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
-    }
-    else
-    {
-        assert(false);
-    }
-}
-
-void ClientGC::SendInventoryUpdate()
-{
-    CMsgSOCacheSubscribed message;
-    m_inventory.BuildCacheSubscription(message, CONFIG_PLAYER_LEVEL, false);
-    SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
-}
-
-void ClientGC::CheckFileReloads()
-{
-    UpdateCooldown();
-}
-
-void ClientGC::ReloadInventory()
-{
-    m_inventory.ReloadFromFile();
-    SendInventoryUpdate();
-}
-
-void ClientGC::ReloadConfig()
-{
-    // Ничего не делаем
-}
-
-void ClientGC::ReloadPriceSheet()
-{
-    // Ничего не делаем
-}
-
-void ClientGC::ReloadPasses()
-{
-    // Ничего не делаем
-}
-
-void ClientGC::ReloadUnusualLootLists()
-{
-    // Ничего не делаем
-}
-
-void ClientGC::FetchOverwatchCases()
-{
-    ISteamHTTP *http = SteamHTTP();
-    if (!http) return;
-
-    HTTPRequestHandle hRequest = http->CreateHTTPRequest(k_EHTTPMethodGET, "https://sasha190409.github.io/csgo/overwatch");
-    if (hRequest == k_uAPICallInvalid) return;
-
-    http->SetHTTPRequestHeaderValue(hRequest, "User-Agent", "csgo_gc/1.0");
-
-    SteamAPICall_t hCall;
-    if (!http->SendHTTPRequest(hRequest, &hCall))
-        Platform::Print("Overwatch: failed to send request\n");
-}
-
-void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
-{
-    if (!pCallback->m_bRequestSuccessful || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
-    {
-        Platform::Print("Overwatch: HTTP request failed (status %d, success %d)\n",
-                        pCallback->m_eStatusCode, pCallback->m_bRequestSuccessful);
-        return;
-    }
-
-    ISteamHTTP *http = SteamHTTP();
-    if (!http) return;
-
-    uint32_t bodySize;
-    if (!http->GetHTTPResponseBodySize(pCallback->m_hRequest, &bodySize) || bodySize == 0)
-        return;
-
-    std::vector<uint8_t> body(bodySize + 1, 0);
-    if (!http->GetHTTPResponseBodyData(pCallback->m_hRequest, body.data(), bodySize))
-        return;
-
-    std::string json(reinterpret_cast<char*>(body.data()), bodySize);
-    Platform::Print("Overwatch: received JSON: %s\n", json.c_str());
-
-    std::vector<uint32_t> suspects;
-    size_t pos = 0;
-    size_t start = json.find('{');
-    if (start == std::string::npos) return;
-    size_t end = json.rfind('}');
-    if (end == std::string::npos || end <= start) return;
-    std::string content = json.substr(start + 1, end - start - 1);
-
-    size_t comma = 0;
-    while (comma != std::string::npos)
-    {
-        size_t next = content.find(',', comma);
-        std::string pair = content.substr(comma, (next == std::string::npos) ? std::string::npos : next - comma);
-        pair.erase(0, pair.find_first_not_of(" \t\n\r"));
-        pair.erase(pair.find_last_not_of(" \t\n\r") + 1);
-        if (pair.empty()) break;
-
-        size_t colon = pair.find(':');
-        if (colon == std::string::npos) continue;
-        std::string key = pair.substr(0, colon);
-        std::string value = pair.substr(colon + 1);
-        auto trimQuotes = [](std::string& s) {
-            if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
-                s = s.substr(1, s.size() - 2);
-        };
-        trimQuotes(key);
-        trimQuotes(value);
-        if (key.find("case") == 0 && !value.empty())
-        {
-            uint32_t accId = SteamIDStringToAccountId(value);
-            if (accId != 0)
-                suspects.push_back(accId);
-        }
-
-        comma = (next == std::string::npos) ? std::string::npos : next + 1;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(m_overwatchMutex);
-        m_overwatchSuspects = std::move(suspects);
-        m_nextOverwatchIndex = 0;
-        Platform::Print("Overwatch: loaded %zu suspects\n", m_overwatchSuspects.size());
-    }
-}
-
-uint32_t ClientGC::SteamIDStringToAccountId(const std::string &str)
-{
-    unsigned int x, y;
-    if (sscanf(str.c_str(), "STEAM_%*u:%u:%u", &x, &y) != 2)
-        return 0;
-    return y * 2 + x;
-}
-
-void ClientGC::SendOverwatchCaseAssignment(uint32_t suspectAccountId)
-{
-    CMsgGCCStrike15_v2_PlayerOverwatchCaseAssignment assignment;
-    assignment.set_caseid(m_nextCaseId++);
-    assignment.set_suspectid(suspectAccountId);
-    assignment.set_fractionid(0);
-    assignment.set_numrounds(8);
-    assignment.set_fractionrounds(8);
-    assignment.set_streakconvictions(0);
-    assignment.set_reason(0);
-    assignment.set_verdict(0);
-    assignment.set_timestamp(static_cast<uint32_t>(time(nullptr)));
-    assignment.set_throttleseconds(0);
-
-    std::string url = "https://sasha190409.github.io/csgo/demos/imposter_"
-                    + std::to_string(suspectAccountId) + ".dem";
-    assignment.set_caseurl(url);
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayerOverwatchCaseAssignment, assignment);
-
-    Platform::Print("Overwatch: assigned case %llu for suspect %u, URL: %s\n",
-                    assignment.caseid(), suspectAccountId, url.c_str());
-}
-
-void ClientGC::OnOverwatchCaseStatus(GCMessageRead& messageRead)
-{
-    CMsgGCCStrike15_v2_PlayerOverwatchCaseStatus msg;
-    if (!messageRead.ReadProtobuf(msg))
-    {
-        Platform::Print("Failed to parse OverwatchCaseStatus\n");
-        return;
-    }
-
-    if (msg.caseid() == 0)
-    {
-        std::lock_guard<std::mutex> lock(m_overwatchMutex);
-        if (m_overwatchSuspects.empty())
-        {
-            Platform::Print("Overwatch: no suspects available\n");
-            return;
-        }
-        uint32_t suspect = m_overwatchSuspects[m_nextOverwatchIndex];
-        m_nextOverwatchIndex = (m_nextOverwatchIndex + 1) % m_overwatchSuspects.size();
-        SendOverwatchCaseAssignment(suspect);
-    }
-    else
-    {
-        Platform::Print("Overwatch: status check for case %llu (status %u)\n",
-                        msg.caseid(), msg.statusid());
-    }
-}
-
-void ClientGC::OnOverwatchCaseUpdate(GCMessageRead& messageRead)
-{
-    CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate msg;
-    if (!messageRead.ReadProtobuf(msg)) {
-        Platform::Print("Failed to parse OverwatchCaseUpdate\n");
-        return;
-    }
-
-    Platform::Print("Overwatch: verdict for case %llu, suspect %u, reason %u\n",
-                    msg.caseid(), msg.suspectid(), msg.reason());
-
-    SendVerdictToCloudflare(msg);
-}
-
-void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate &msg)
-{
-    ISteamHTTP *http = SteamHTTP();
-    if (!http) return;
-
-    std::string json = "{"
-        "\"caseid\":" + std::to_string(msg.caseid()) + ","
-        "\"suspectid\":" + std::to_string(msg.suspectid()) + ","
-        "\"reason\":" + std::to_string(msg.reason()) + ","
-        "\"timestamp\":" + std::to_string(time(nullptr)) +
-    "}";
-
-    HTTPRequestHandle hRequest = http->CreateHTTPRequest(k_EHTTPMethodPOST, "https://still-dawn-e090.ivanhihlov4.workers.dev/verdict");
-    if (hRequest == k_uAPICallInvalid) return;
-
-    http->SetHTTPRequestHeaderValue(hRequest, "Content-Type", "application/json");
-
-    std::vector<uint8_t> postData(json.begin(), json.end());
-    http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
-
-    http->SendHTTPRequest(hRequest, nullptr);
-}
-
-uint32_t ClientGC::EffectiveAccountId() const
-{
-    return AccountId();
+    // just forward it to the killer
+    GCMessageWrite messageWrite{ k_EMsgGC_IncrementKillCountAttribute, message };
+    CSteamID killerId{ message.killer_account_id(), k_EUniversePublic, k_EAccountTypeIndividual };
+    PostToHost(HostEvent::NetMessage, killerId.ConvertToUint64(), messageWrite.Data(), messageWrite.Size());
 }
