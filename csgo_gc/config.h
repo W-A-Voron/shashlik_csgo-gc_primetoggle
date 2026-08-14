@@ -85,17 +85,8 @@ private:
     // Друзья
     std::vector<int> m_friends = { 1140104601, 7656119801234567, 7656119807654321 };
 
-    // Веса (используем суффикс U для uint32_t, чтобы избежать сужающих преобразований)
-    std::vector<RarityWeight> m_rarityWeights = {
-        { ItemSchema::RarityCommon, 10000000U },
-        { ItemSchema::RarityUncommon, 2000000U },
-        { ItemSchema::RarityRare, 400000U },
-        { ItemSchema::RarityMythical, 80000U },
-        { ItemSchema::RarityLegendary, 16000U },
-        { ItemSchema::RarityAncient, 3200U },
-        { ItemSchema::RarityImmortal, 640U },
-        { ItemSchema::RarityUnusual, 1280U },
-    };
+    // Веса (объявление без инициализации, инициализируется в .cpp)
+    std::vector<RarityWeight> m_rarityWeights;
 };
 
 GCConfig &GetConfig();
