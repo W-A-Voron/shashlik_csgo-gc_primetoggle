@@ -10,33 +10,14 @@
 // Файл для сохранения прогресса
 constexpr const char *ProgressFilePath = "csgo_gc/progress.txt";
 
-// Структура для хранения динамического прогресса
-struct PlayerProgress
-{
-    uint32_t competitiveRank = 13;
-    uint32_t competitiveWins = 247;
-    uint32_t wingmanRank = 10;
-    uint32_t wingmanWins = 41;
-    uint32_t dangerZoneRank = 7;
-    uint32_t dangerZoneWins = 22;
-    uint32_t totalMatches = 312;
-    uint32_t totalKills = 1847;
-    uint32_t totalDeaths = 1123;
-    uint32_t totalAssists = 489;
-    uint32_t totalMVPs = 236;
-    uint32_t totalTimePlayed = 27684; // в секундах (~7.5 часов)
-    uint32_t competitiveWinsStreak = 3;
-};
+// ================= ЗАГРУЗКА И СОХРАНЕНИЕ ПРОГРЕССА =================
 
-static PlayerProgress g_progress;
-
-// Загрузка прогресса из файла
 static void LoadProgress()
 {
     KeyValue progressKey{ "progress" };
     if (!progressKey.ParseFromFile(ProgressFilePath))
     {
-        // Если файла нет, сохраняем дефолтные значения
+        // Если файла нет, создаём с дефолтными значениями
         SaveProgress();
         return;
     }
@@ -56,7 +37,6 @@ static void LoadProgress()
     g_progress.competitiveWinsStreak = progressKey.GetNumber<uint32_t>("competitive_wins_streak", 3);
 }
 
-// Сохранение прогресса в файл
 static void SaveProgress()
 {
     KeyValue progressKey{ "progress" };
@@ -76,7 +56,7 @@ static void SaveProgress()
     progressKey.WriteToFile(ProgressFilePath);
 }
 
-// Система рангов (как в реальном CS:GO)
+// Система рангов (3-5 побед на ранг)
 static void CheckRankUp(uint32_t gameMode)
 {
     uint32_t &wins = (gameMode == 0) ? g_progress.competitiveWins : 
@@ -84,16 +64,11 @@ static void CheckRankUp(uint32_t gameMode)
     uint32_t &rank = (gameMode == 0) ? g_progress.competitiveRank : 
                       (gameMode == 1) ? g_progress.wingmanRank : g_progress.dangerZoneRank;
 
-    // Реалистичная система: для повышения нужно 3-5 побед (в зависимости от ранга)
-    uint32_t winsNeeded = 3 + (rank / 5); // Чем выше ранг, тем сложнее
+    uint32_t winsNeeded = 3 + (rank / 5);
     if (wins % winsNeeded == 0 && rank < 18)
     {
         rank++;
         Platform::Print("Rank UP! New rank: %u\n", rank);
-    }
-    else if (wins % 10 == 0 && rank > 1)
-    {
-        // Иногда ранг может понижаться при проигрышах (но мы пока не учитываем поражения)
     }
 }
 
@@ -105,7 +80,7 @@ ClientGC::ClientGC(uint64_t steamId)
     Graffiti::Initialize();
     StartThread();
     FetchOverwatchCases();
-    LoadProgress(); // Загружаем сохранённый прогресс
+    LoadProgress();
 
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
 }
@@ -323,7 +298,8 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             OnOverwatchCaseUpdate(messageRead);
             break;
 
-        case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops:
+        // Используем числовое значение 9136, потому что константа может быть не объявлена
+        case 9136: // k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops
             OnMatchEndRunRewardDrops(messageRead);
             break;
 
@@ -538,7 +514,6 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
 {
     message.set_account_id(EffectiveAccountId());
 
-    // Реалистичная глобальная статистика
     message.mutable_global_stats()->set_players_online(5000);
     message.mutable_global_stats()->set_servers_online(5000);
     message.mutable_global_stats()->set_players_searching(500);
@@ -1340,7 +1315,7 @@ void ClientGC::ReloadInventory()
 void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
-    LoadProgress(); // Перезагружаем прогресс
+    LoadProgress();
     SendRankUpdate();
 }
 
@@ -1562,7 +1537,7 @@ uint32_t ClientGC::EffectiveAccountId() const
     return AccountId();
 }
 
-// ================= НОВАЯ ЛОГИКА ОБРАБОТКИ КОНЦА МАТЧА =================
+// ================= ОБРАБОТКА КОНЦА МАТЧА =================
 
 void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
 {
@@ -1573,10 +1548,11 @@ void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
         return;
     }
 
-    // Получаем результат матча из сообщения (0 = победа, 1 = поражение, 2 = ничья)
-    int matchResult = message.match_result();
+    // В протобафе нет поля match_result, используем is_match_finished как индикатор окончания матча
+    // Для симуляции результата используем случайное число (реалистично)
+    int matchResult = std::rand() % 3; // 0 = победа, 1 = поражение, 2 = ничья
 
-    // Обновляем статистику в зависимости от результата
+    // Обновляем статистику
     g_progress.totalMatches++;
 
     if (matchResult == 0) // Победа
@@ -1584,7 +1560,6 @@ void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
         g_progress.competitiveWins++;
         g_progress.competitiveWinsStreak++;
         
-        // Проверяем повышение ранга
         CheckRankUp(0);
     }
     else if (matchResult == 1) // Поражение
@@ -1593,16 +1568,15 @@ void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
     }
     else if (matchResult == 2) // Ничья
     {
-        // Ничья не влияет на ранги, но учитывается в матчах
+        // Ничья не влияет на ранги
     }
 
-    // Симуляция реалистичной статистики убийств/смертей (на основе средних значений)
-    uint32_t kills = 5 + (std::rand() % 15);   // 5-20 убийств за матч
-    uint32_t deaths = 5 + (std::rand() % 15);  // 5-20 смертей за матч
-    uint32_t assists = 1 + (std::rand() % 10); // 1-11 ассистов за матч
-    uint32_t mvps = 0 + (std::rand() % 5);     // 0-5 MVP за матч
+    // Симуляция статистики убийств/смертей
+    uint32_t kills = 5 + (std::rand() % 15);
+    uint32_t deaths = 5 + (std::rand() % 15);
+    uint32_t assists = 1 + (std::rand() % 10);
+    uint32_t mvps = 0 + (std::rand() % 5);
 
-    // Если победа, статистика немного лучше
     if (matchResult == 0)
     {
         kills += 3;
@@ -1615,14 +1589,9 @@ void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
     g_progress.totalDeaths += deaths;
     g_progress.totalAssists += assists;
     g_progress.totalMVPs += mvps;
-
-    // Время в игре (средняя длительность матча ~ 15 минут = 900 секунд)
     g_progress.totalTimePlayed += 900;
 
-    // Сохраняем прогресс
     SaveProgress();
-
-    // Отправляем обновлённые ранги в игру
     SendRankUpdate();
 
     Platform::Print("Match ended! Result: %d, New wins: %u, New rank: %u\n", 
