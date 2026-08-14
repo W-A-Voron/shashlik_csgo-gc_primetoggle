@@ -100,6 +100,7 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 
         SendMatchmakingUpdate(); 
         SendCompetitiveCooldown(); 
+        Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
         return;
     }
 
@@ -350,7 +351,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
 }
 
-
 void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 {
     GCMessageRead messageRead{ 0, data, size };
@@ -401,45 +401,38 @@ static void BuildCSWelcome(CMsgCStrike15Welcome &message)
     message.set_last_ip_address(MakeAddress(127, 0, 0, 1));
 }
 
-// ============================================================
-// ГЛАВНАЯ ФУНКЦИЯ: ЗАПОЛНЕНИЕ СТАТИСТИКИ (ВСЕ РЕЖИМЫ)
-// ============================================================
+// ========================================================================
+// ЗАПОЛНЕНИЕ СТАТИСТИКИ ВСЕХ РЕЖИМОВ (ХАРДКОД РЕАЛИСТИЧНЫХ ЦИФР)
+// ========================================================================
 void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
 {
     message.set_account_id(EffectiveAccountId());
+    
+    message.mutable_global_stats()->set_players_online(1000);
+    message.mutable_global_stats()->set_servers_online(1000);
+    message.mutable_global_stats()->set_players_searching(500);
+    message.mutable_global_stats()->set_servers_available(500);
+    message.mutable_global_stats()->set_ongoing_matches(500);
+    message.mutable_global_stats()->set_search_time_avg(45);
+    
+    message.mutable_global_stats()->set_main_post_url("");
+    message.mutable_global_stats()->set_required_appid_version(13857);
+    message.mutable_global_stats()->set_pricesheet_version(1680057676);
+    message.mutable_global_stats()->set_twitch_streams_version(2);
+    message.mutable_global_stats()->set_active_tournament_eventid(20);
+    message.mutable_global_stats()->set_active_survey_id(0);
+    message.mutable_global_stats()->set_required_appid_version2(13862);
 
-    // --- ОБЩАЯ СТАТИСТИКА (ГЛОБАЛЬНАЯ) ---
     auto* stats = message.mutable_global_stats();
-    stats->set_players_online(1000);
-    stats->set_servers_online(1000);
-    stats->set_players_searching(500);
-    stats->set_servers_available(500);
-    stats->set_ongoing_matches(500);
-    stats->set_search_time_avg(45);
-    
-    stats->set_main_post_url("");
-    stats->set_required_appid_version(13857);
-    stats->set_pricesheet_version(1680057676);
-    stats->set_twitch_streams_version(2);
-    stats->set_active_tournament_eventid(20);
-    stats->set_active_survey_id(0);
-    stats->set_required_appid_version2(13862);
+    auto* detail = stats->add_search_statistics();
+    detail->set_game_type(6);
+    detail->set_search_time_avg(45);
+    detail->set_players_searching(500);
 
-    // --- СОРЕВНОВАТЕЛЬНЫЙ ПРЕМЬЕР-РЕЖИМ (И ВСЕ ОСТАЛЬНЫЕ РЕЖИМЫ) ---
-    auto* mode_stats = message.mutable_global_stats()->add_search_statistics();
-    mode_stats->set_game_type(6); // Competitive
-    mode_stats->set_search_time_avg(45);
-    mode_stats->set_players_searching(500);
-
-    // --- ЗАПОЛНЕНИЕ СТАТИСТИКИ ИГРОКА (СТРОКА В МЕНЮ) ---
     message.set_vac_banned(GetConfig().VacBanned());
-    
-    // Похвалы
     message.mutable_commendation()->set_cmd_friendly(22);
     message.mutable_commendation()->set_cmd_teaching(15);
     message.mutable_commendation()->set_cmd_leader(8);
-
-    // Ранг и уровень (берём из конфига, чтобы был хотя бы какой-то)
     message.set_player_level(GetConfig().Level());
     message.set_player_cur_xp(GetConfig().Xp());
 }
@@ -459,9 +452,6 @@ void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike1
     message.set_txn_country_code(GetConfig().Country());
 }
 
-// ============================================================
-// ОТПРАВКА РАНГОВ И ПОБЕД (БЕЗ СОХРАНЕНИЯ В КОНФИГ)
-// ============================================================
 void ClientGC::SendRankUpdate()
 {
     CMsgGCCStrike15_v2_ClientGCRankUpdate message;
