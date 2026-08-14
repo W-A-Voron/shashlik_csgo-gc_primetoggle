@@ -401,20 +401,35 @@ static void BuildCSWelcome(CMsgCStrike15Welcome &message)
     message.set_last_ip_address(MakeAddress(127, 0, 0, 1));
 }
 
-// ========================================================================
-// ЗАПОЛНЕНИЕ СТАТИСТИКИ ВСЕХ РЕЖИМОВ (ХАРДКОД РЕАЛИСТИЧНЫХ ЦИФР)
-// ========================================================================
+// ============================================================
+// ГЛАВНАЯ ФУНКЦИЯ: ОТПРАВКА СТАТИСТИКИ (ХАРДКОД ЦИФР)
+// ============================================================
 void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
 {
     message.set_account_id(EffectiveAccountId());
     
-    message.mutable_global_stats()->set_players_online(1000);
-    message.mutable_global_stats()->set_servers_online(1000);
-    message.mutable_global_stats()->set_players_searching(500);
-    message.mutable_global_stats()->set_servers_available(500);
-    message.mutable_global_stats()->set_ongoing_matches(500);
-    message.mutable_global_stats()->set_search_time_avg(45);
-    
+    // Онлайн и поиск
+    message.mutable_global_stats()->set_players_online(1500);
+    message.mutable_global_stats()->set_servers_online(1200);
+    message.mutable_global_stats()->set_players_searching(600);
+    message.mutable_global_stats()->set_servers_available(400);
+    message.mutable_global_stats()->set_ongoing_matches(300);
+    message.mutable_global_stats()->set_search_time_avg(42);
+
+    auto* stats = message.mutable_global_stats();
+    auto* detail = stats->add_search_statistics();
+    detail->set_game_type(6);
+    detail->set_search_time_avg(42);
+    detail->set_players_searching(600);
+
+    // Вак, похвалы, уровень
+    message.set_vac_banned(GetConfig().VacBanned());
+    message.mutable_commendation()->set_cmd_friendly(22);
+    message.mutable_commendation()->set_cmd_teaching(15);
+    message.mutable_commendation()->set_cmd_leader(8);
+    message.set_player_level(GetConfig().Level());
+    message.set_player_cur_xp(GetConfig().Xp());
+
     message.mutable_global_stats()->set_main_post_url("");
     message.mutable_global_stats()->set_required_appid_version(13857);
     message.mutable_global_stats()->set_pricesheet_version(1680057676);
@@ -422,19 +437,6 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_global_stats()->set_active_tournament_eventid(20);
     message.mutable_global_stats()->set_active_survey_id(0);
     message.mutable_global_stats()->set_required_appid_version2(13862);
-
-    auto* stats = message.mutable_global_stats();
-    auto* detail = stats->add_search_statistics();
-    detail->set_game_type(6);
-    detail->set_search_time_avg(45);
-    detail->set_players_searching(500);
-
-    message.set_vac_banned(GetConfig().VacBanned());
-    message.mutable_commendation()->set_cmd_friendly(22);
-    message.mutable_commendation()->set_cmd_teaching(15);
-    message.mutable_commendation()->set_cmd_leader(8);
-    message.set_player_level(GetConfig().Level());
-    message.set_player_cur_xp(GetConfig().Xp());
 }
 
 void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
@@ -1161,4 +1163,9 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
     http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
 
     http->SendHTTPRequest(hRequest, nullptr);
+}
+
+uint32_t ClientGC::EffectiveAccountId() const
+{
+    return AccountId();
 }
