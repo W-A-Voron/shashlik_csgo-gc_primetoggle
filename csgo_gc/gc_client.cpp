@@ -7,10 +7,6 @@
 #include <steam/isteamhttp.h>
 #include "steam_hook.h"   // for RecreateClientGC()
 
-// --- ХАРДКОДНЫЕ ФЛАГИ, ИГНОРИРУЮЩИЕ КОНФИГ ---
-static constexpr bool FORCE_MAX_RARITY = false;        // выключаем принудительный редкий скин
-static constexpr bool DESTROY_USED_ITEMS = true;       // уничтожать предметы после использования
-
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
     , m_inventory{ m_steamId }
@@ -98,7 +94,20 @@ void ClientGC::SendMatchmakingUpdate()
 
 void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 {
-    // Игнорируем кулдаун из конфига, он нам не нужен
+    uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
+    if (cooldown > 0)
+    {
+        m_isSearching = false;
+        m_isCooldownActive = true;
+        m_cooldownEndTime = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown);
+
+        SendMatchmakingUpdate(); // stops the searching animation
+        SendCompetitiveCooldown(); // sends initial cooldown
+        Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
+        return;
+    }
+
+    // Original code continues...
     m_isSearching = true;
     SendMatchmakingUpdate();
 }
@@ -362,7 +371,7 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
     }
 
     // Destroy the gift if configured
-    if (DESTROY_USED_ITEMS)
+    if (GetConfig().DestroyUsedItems())
     {
         m_inventory.RemoveItem(giftId, destroy);
     }
@@ -483,13 +492,11 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_global_stats()->set_required_appid_version2(13862); // csgo s2
 
     message.set_vac_banned(GetConfig().VacBanned());
-    
-    // --- ИЗМЕНЕНИЕ: Нереалистичные круглые числа заменены на реалистичные случайные ---
-    message.mutable_commendation()->set_cmd_friendly(247);
-    message.mutable_commendation()->set_cmd_teaching(84);
-    message.mutable_commendation()->set_cmd_leader(41);
-    message.set_player_level(32);
-    message.set_player_cur_xp(4923);
+    message.mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
+    message.mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
+    message.mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
+    message.set_player_level(GetConfig().Level());
+    message.set_player_cur_xp(GetConfig().Xp());
 }
 
 void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
@@ -514,20 +521,20 @@ void ClientGC::SendRankUpdate()
 
     PlayerRankingInfo *rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(RankGlobalElite);      // 18, а не 39
-    rank->set_wins(317);                     // не 2147483647
+    rank->set_rank_id(GetConfig().CompetitiveRank());
+    rank->set_wins(GetConfig().CompetitiveWins());
     rank->set_rank_type_id(RankTypeCompetitive);
 
     rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(RankMasterGuardianElite); // 11, а не 18
-    rank->set_wins(89);                      // не 2147483647
+    rank->set_rank_id(GetConfig().WingmanRank());
+    rank->set_wins(GetConfig().WingmanWins());
     rank->set_rank_type_id(RankTypeWingman);
 
     rank = message.add_rankings();
     rank->set_account_id(AccountId());
-    rank->set_rank_id(DangerZoneRankTimberWolf); // 9, а не 15
-    rank->set_wins(47);                      // не 2147483647
+    rank->set_rank_id(GetConfig().DangerZoneRank());
+    rank->set_wins(GetConfig().DangerZoneWins());
     rank->set_rank_type_id(RankTypeDangerZone);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
@@ -562,7 +569,7 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
     // send all ranks here as well, it's a bit back and forth with real gc
     SendRankUpdate();
     
-    uint32_t cooldown = 0; // не используем кулдаун
+    uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
     if (cooldown > 0) {
         SendCompetitiveCooldown();
     }
@@ -993,11 +1000,11 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
     // --- Добавляем базовый профиль для запрошенного аккаунта ---
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello* mmHello = response.add_account_profiles();
     mmHello->set_account_id(message.account_id());
-    mmHello->mutable_commendation()->set_cmd_friendly(247);
-    mmHello->mutable_commendation()->set_cmd_teaching(84);
-    mmHello->mutable_commendation()->set_cmd_leader(41);
-    mmHello->set_player_level(32);
-    mmHello->set_player_cur_xp(4923);
+    mmHello->mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
+    mmHello->mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
+    mmHello->mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
+    mmHello->set_player_level(GetConfig().Level());
+    mmHello->set_player_cur_xp(GetConfig().Xp());
 
     // --- Получаем список друзей из конфига (уже есть в GCConfig) ---
     std::vector<int> friends = GetConfig().GetFriends();
@@ -1151,7 +1158,7 @@ void ClientGC::UnlockCrate(GCMessageRead &messageRead)
             newItem,
             notification))
     {
-        // ЖЁСТКО УНИЧТОЖАЕМ КЕЙС И КЛЮЧ
+        // mikkotodo what does the server want to know
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyCrate);
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyKey);
         SendMessageToGame(true, k_ESOMsg_Create, newItem);
