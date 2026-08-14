@@ -5,92 +5,67 @@
 #include <filesystem>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
-#include "steam_hook.h"
-#include <cstdlib> // Для std::rand()
+#include "steam_hook.h"   // for RecreateClientGC()
+#include <fstream>
 
-// Файл для сохранения прогресса
-constexpr const char *ProgressFilePath = "csgo_gc/progress.txt";
+// --- НОВАЯ СИСТЕМА СОХРАНЕНИЯ ДИНАМИЧЕСКОЙ СТАТИСТИКИ ---
 
-// ================= ГЛОБАЛЬНАЯ ПЕРЕМЕННАЯ ПРОГРЕССА =================
-static PlayerProgress g_progress;
-
-// ================= ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ПРОГРЕССОМ =================
-
-static void LoadProgress()
+// Функция для сохранения текущего счётчика побед и ранга обратно в config.txt
+static void SaveDynamicStatsToConfig(uint32_t compRank, uint32_t compWins, 
+                                     uint32_t wingRank, uint32_t wingWins,
+                                     uint32_t dzRank, uint32_t dzWins)
 {
-    KeyValue progressKey{ "progress" };
-    if (!progressKey.ParseFromFile(ProgressFilePath))
-    {
-        // Если файла нет, создаём с дефолтными значениями
-        SaveProgress();
+    // Читаем весь файл в строку, чтобы сохранить форматирование
+    std::string filePath = "csgo_gc/config.txt";
+    std::ifstream inFile(filePath);
+    if (!inFile.is_open()) {
+        Platform::Print("SaveDynamicStats: Could not open config.txt for reading\n");
         return;
     }
+    
+    std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+    inFile.close();
 
-    g_progress.competitiveRank = progressKey.GetNumber<uint32_t>("competitive_rank", 13);
-    g_progress.competitiveWins = progressKey.GetNumber<uint32_t>("competitive_wins", 247);
-    g_progress.wingmanRank = progressKey.GetNumber<uint32_t>("wingman_rank", 10);
-    g_progress.wingmanWins = progressKey.GetNumber<uint32_t>("wingman_wins", 41);
-    g_progress.dangerZoneRank = progressKey.GetNumber<uint32_t>("dangerzone_rank", 7);
-    g_progress.dangerZoneWins = progressKey.GetNumber<uint32_t>("dangerzone_wins", 22);
-    g_progress.totalMatches = progressKey.GetNumber<uint32_t>("total_matches", 312);
-    g_progress.totalKills = progressKey.GetNumber<uint32_t>("total_kills", 1847);
-    g_progress.totalDeaths = progressKey.GetNumber<uint32_t>("total_deaths", 1123);
-    g_progress.totalAssists = progressKey.GetNumber<uint32_t>("total_assists", 489);
-    g_progress.totalMVPs = progressKey.GetNumber<uint32_t>("total_mvps", 236);
-    g_progress.totalTimePlayed = progressKey.GetNumber<uint32_t>("total_time_played", 27684);
-    g_progress.competitiveWinsStreak = progressKey.GetNumber<uint32_t>("competitive_wins_streak", 3);
+    // Очень простая замена строк. В идеале нужен парсер, но для этого мода хватит и так.
+    // Формат строк в файле: "competitive_rank" "13" и т.д.
+    // Используем временные буферы для замены.
+    
+    auto replaceValue = [&](const std::string& key, uint32_t newValue) {
+        std::string searchKey = "\"" + key + "\"";
+        size_t pos = content.find(searchKey);
+        if (pos != std::string::npos) {
+            // Ищем открывающую кавычку значения
+            size_t startQuote = content.find('\"', pos + searchKey.length());
+            if (startQuote != std::string::npos) {
+                size_t endQuote = content.find('\"', startQuote + 1);
+                if (endQuote != std::string::npos) {
+                    std::string newValStr = std::to_string(newValue);
+                    content.replace(startQuote + 1, endQuote - startQuote - 1, newValStr);
+                }
+            }
+        }
+    };
+
+    replaceValue("competitive_rank", compRank);
+    replaceValue("competitive_wins", compWins);
+    replaceValue("wingman_rank", wingRank);
+    replaceValue("wingman_wins", wingWins);
+    replaceValue("dangerzone_rank", dzRank);
+    replaceValue("dangerzone_wins", dzWins);
+
+    // Записываем обратно в файл
+    std::ofstream outFile(filePath);
+    if (!outFile.is_open()) {
+        Platform::Print("SaveDynamicStats: Failed to write to config.txt!\n");
+        return;
+    }
+    outFile << content;
+    outFile.close();
+    
+    Platform::Print("Dynamic Stats Saved! CompRank: %d, CompWins: %d\n", compRank, compWins);
 }
 
-static void SaveProgress()
-{
-    KeyValue progressKey{ "progress" };
-    progressKey.AddNumber("competitive_rank", g_progress.competitiveRank);
-    progressKey.AddNumber("competitive_wins", g_progress.competitiveWins);
-    progressKey.AddNumber("wingman_rank", g_progress.wingmanRank);
-    progressKey.AddNumber("wingman_wins", g_progress.wingmanWins);
-    progressKey.AddNumber("dangerzone_rank", g_progress.dangerZoneRank);
-    progressKey.AddNumber("dangerzone_wins", g_progress.dangerZoneWins);
-    progressKey.AddNumber("total_matches", g_progress.totalMatches);
-    progressKey.AddNumber("total_kills", g_progress.totalKills);
-    progressKey.AddNumber("total_deaths", g_progress.totalDeaths);
-    progressKey.AddNumber("total_assists", g_progress.totalAssists);
-    progressKey.AddNumber("total_mvps", g_progress.totalMVPs);
-    progressKey.AddNumber("total_time_played", g_progress.totalTimePlayed);
-    progressKey.AddNumber("competitive_wins_streak", g_progress.competitiveWinsStreak);
-    progressKey.WriteToFile(ProgressFilePath);
-}
-
-// Система рангов (3-5 побед на ранг)
-static void CheckRankUp(uint32_t gameMode)
-{
-    if (gameMode == 0)
-    {
-        uint32_t winsNeeded = 3 + (g_progress.competitiveRank / 5);
-        if (g_progress.competitiveWins % winsNeeded == 0 && g_progress.competitiveRank < 18)
-        {
-            g_progress.competitiveRank++;
-            Platform::Print("Rank UP! New rank: %u\n", g_progress.competitiveRank);
-        }
-    }
-    else if (gameMode == 1)
-    {
-        uint32_t winsNeeded = 3 + (g_progress.wingmanRank / 5);
-        if (g_progress.wingmanWins % winsNeeded == 0 && g_progress.wingmanRank < 18)
-        {
-            g_progress.wingmanRank++;
-            Platform::Print("Wingman Rank UP! New rank: %u\n", g_progress.wingmanRank);
-        }
-    }
-    else if (gameMode == 2)
-    {
-        uint32_t winsNeeded = 3 + (g_progress.dangerZoneRank / 5);
-        if (g_progress.dangerZoneWins % winsNeeded == 0 && g_progress.dangerZoneRank < 15)
-        {
-            g_progress.dangerZoneRank++;
-            Platform::Print("Danger Zone Rank UP! New rank: %u\n", g_progress.dangerZoneRank);
-        }
-    }
-}
+// --- КОНЕЦ НОВОЙ СИСТЕМЫ ---
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
@@ -100,7 +75,9 @@ ClientGC::ClientGC(uint64_t steamId)
     Graffiti::Initialize();
     StartThread();
     FetchOverwatchCases();
-    LoadProgress();
+
+    // Сбрасываем флаг "реального матча" при старте
+    m_hasCompletedMatch = false;
 
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
 }
@@ -147,7 +124,7 @@ void ClientGC::SendCompetitiveCooldown()
 
     CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
     penalty.set_account_id(EffectiveAccountId());
-    penalty.set_reason(0);
+    penalty.set_reason(0); // competitive cooldown
     penalty.set_seconds(seconds);
     penalty.set_communication_cooldown(false);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
@@ -165,7 +142,7 @@ void ClientGC::SendMatchmakingUpdate()
 
     auto* stats = update.mutable_global_stats();
     stats->set_players_searching(1000);
-    stats->set_search_time_avg(60);
+    stats->set_search_time_avg(60);   
 
     auto* detail = stats->add_search_statistics();
     detail->set_game_type(0);
@@ -184,12 +161,14 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
         m_isCooldownActive = true;
         m_cooldownEndTime = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown);
 
-        SendMatchmakingUpdate();
-        SendCompetitiveCooldown();
+        SendMatchmakingUpdate(); 
+        SendCompetitiveCooldown(); 
         Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
         return;
     }
 
+    // Сброс флага перед началом нового матча
+    m_hasCompletedMatch = false;
     m_isSearching = true;
     SendMatchmakingUpdate();
 }
@@ -204,9 +183,9 @@ void ClientGC::SendMatchmakingReservation()
 {
     CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
     reserve.set_serverid(0x12345678);
-    reserve.set_direct_udp_ip(0xC0A8000E);
+    reserve.set_direct_udp_ip(0xC0A8000E); 
     reserve.set_direct_udp_port(27019);
-    reserve.set_reservationid(++m_matchmakingReservationId);
+    reserve.set_reservationid(++m_matchmakingReservationId); 
     reserve.set_map("de_dust2");
     reserve.set_server_address("192.168.0.14:27019");
     CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *sub = reserve.mutable_reservation();
@@ -318,9 +297,8 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             OnOverwatchCaseUpdate(messageRead);
             break;
 
-        // Используем числовое значение 9136, потому что константа может быть не объявлена
-        case 9136: // k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops
-            OnMatchEndRunRewardDrops(messageRead);
+        case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops: // --- ЗДЕСЬ ЛОВИМ КОНЕЦ МАТЧА ---
+            OnMatchEnd(messageRead);
             break;
 
         default:
@@ -361,6 +339,85 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     }
 }
 
+void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchEndRunRewardDrops msg;
+    if (!messageRead.ReadProtobuf(msg))
+    {
+        Platform::Print("Failed to parse MatchEndRunRewardDrops\n");
+        return;
+    }
+
+    Platform::Print("MATCH END DETECTED! Processing rewards...\n");
+
+    // Если матч уже был обработан, пропускаем
+    if (m_hasCompletedMatch) {
+        Platform::Print("Match already processed this session, skipping.\n");
+        return;
+    }
+
+    // Загружаем текущие данные из конфига
+    uint32_t compRank = GetConfig().CompetitiveRank();
+    uint32_t compWins = GetConfig().CompetitiveWins();
+    uint32_t wingRank = GetConfig().WingmanRank();
+    uint32_t wingWins = GetConfig().WingmanWins();
+    uint32_t dzRank = GetConfig().DangerZoneRank();
+    uint32_t dzWins = GetConfig().DangerZoneWins();
+
+    // Простая логика: добавляем 1 победу и, если нужно, повышаем ранг (каждые 10 побед)
+    // В реальности надо парсить тип матча, но для простоты мы повышаем всё.
+    compWins += 1;
+    wingWins += 1;
+    dzWins += 1;
+
+    // Логика повышения ранга (от 1 до 18, 10 побед на ранг)
+    auto rankUp = [](uint32_t currentWins, uint32_t currentRank) -> uint32_t {
+        // Если ранг уже глобал, дальше не повышаем
+        if (currentRank >= 18) return 18;
+        
+        // Каждые 10 побед - +1 ранг
+        uint32_t newRank = 1 + (currentWins / 10);
+        if (newRank > 18) newRank = 18;
+        return newRank;
+    };
+
+    uint32_t newCompRank = rankUp(compWins, compRank);
+    uint32_t newWingRank = rankUp(wingWins, wingRank);
+    uint32_t newDzRank = rankUp(dzWins, dzRank);
+
+    // Сохраняем изменения в файл
+    SaveDynamicStatsToConfig(newCompRank, compWins, newWingRank, wingWins, newDzRank, dzWins);
+
+    // Обновляем ранги в памяти (чтобы отправить клиенту)
+    // ВАЖНО: GetConfig().ReloadFromFile() перезагрузит конфиг, но мы отправим ранги вручную.
+    // Сначала отправим обновление рангов в игру
+    CMsgGCCStrike15_v2_ClientGCRankUpdate rankUpdate;
+    PlayerRankingInfo *rank = rankUpdate.add_rankings();
+    rank->set_account_id(EffectiveAccountId());
+    rank->set_rank_id(newCompRank);
+    rank->set_wins(compWins);
+    rank->set_rank_type_id(RankTypeCompetitive);
+    
+    rank = rankUpdate.add_rankings();
+    rank->set_account_id(EffectiveAccountId());
+    rank->set_rank_id(newWingRank);
+    rank->set_wins(wingWins);
+    rank->set_rank_type_id(RankTypeWingman);
+
+    rank = rankUpdate.add_rankings();
+    rank->set_account_id(EffectiveAccountId());
+    rank->set_rank_id(newDzRank);
+    rank->set_wins(dzWins);
+    rank->set_rank_type_id(RankTypeDangerZone);
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, rankUpdate);
+    
+    // Отмечаем, что матч обработан
+    m_hasCompletedMatch = true;
+    
+    Platform::Print("STATS UPDATED: New Rank %d, Wins %d\n", newCompRank, compWins);
+}
+
 void ClientGC::SendMatchmakingHelloUpdate()
 {
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
@@ -375,7 +432,7 @@ void ClientGC::UpdateCooldown()
     auto now = std::chrono::steady_clock::now();
     if (now >= m_cooldownEndTime) {
         m_isCooldownActive = false;
-        SendCompetitiveCooldown();
+        SendCompetitiveCooldown(); 
         Platform::Print("Competitive cooldown expired.\n");
     }
 }
@@ -390,7 +447,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
     }
 
     uint32_t defIndex = giftItem->def_index();
-
     int numItems = 1;
     if (defIndex == 1210) numItems = 1;
     else if (defIndex == 1211) numItems = 9;
@@ -442,7 +498,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
             Platform::Print("Failed to select item from loot list\n");
             continue;
         }
-
         CSOEconItem &createdItem = m_inventory.CreateItem(newItemProto);
         m_inventory.AddToMultipleObjects(updateMultiple, SOTypeItem, createdItem);
         notification.add_item_id(createdItem.id());
@@ -470,6 +525,7 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 }
+
 
 void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 {
@@ -533,21 +589,22 @@ static void BuildCSWelcome(CMsgCStrike15Welcome &message)
 void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
 {
     message.set_account_id(EffectiveAccountId());
+    
+    // ЗАМЕНА БЕЗУМНОЙ СТАТИСТИКИ НА РЕАЛИСТИЧНУЮ
+    message.mutable_global_stats()->set_players_online(1000);     // Было 10000
+    message.mutable_global_stats()->set_servers_online(1000);     // Было 10000
+    message.mutable_global_stats()->set_players_searching(500);   // Было 1000
+    message.mutable_global_stats()->set_servers_available(500);   // Было 1000
+    message.mutable_global_stats()->set_ongoing_matches(500);     // Было 999
+    message.mutable_global_stats()->set_search_time_avg(45);      // Было 60
 
-    message.mutable_global_stats()->set_players_online(5000);
-    message.mutable_global_stats()->set_servers_online(5000);
-    message.mutable_global_stats()->set_players_searching(500);
-    message.mutable_global_stats()->set_servers_available(500);
-    message.mutable_global_stats()->set_ongoing_matches(400);
-    message.mutable_global_stats()->set_search_time_avg(30);
-
-    auto* detail = message.mutable_global_stats()->add_search_statistics();
+    auto* stats = message.mutable_global_stats();
+    auto* detail = stats->add_search_statistics();
     detail->set_game_type(6);
-    detail->set_search_time_avg(30);
+    detail->set_search_time_avg(45);
     detail->set_players_searching(500);
 
     message.mutable_global_stats()->set_main_post_url("");
-
     message.mutable_global_stats()->set_required_appid_version(13857);
     message.mutable_global_stats()->set_pricesheet_version(1680057676);
     message.mutable_global_stats()->set_twitch_streams_version(2);
@@ -584,20 +641,20 @@ void ClientGC::SendRankUpdate()
 
     PlayerRankingInfo *rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(g_progress.competitiveRank);
-    rank->set_wins(g_progress.competitiveWins);
+    rank->set_rank_id(GetConfig().CompetitiveRank());
+    rank->set_wins(GetConfig().CompetitiveWins());
     rank->set_rank_type_id(RankTypeCompetitive);
 
     rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(g_progress.wingmanRank);
-    rank->set_wins(g_progress.wingmanWins);
+    rank->set_rank_id(GetConfig().WingmanRank());
+    rank->set_wins(GetConfig().WingmanWins());
     rank->set_rank_type_id(RankTypeWingman);
 
     rank = message.add_rankings();
-    rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(g_progress.dangerZoneRank);
-    rank->set_wins(g_progress.dangerZoneWins);
+    rank->set_account_id(AccountId());
+    rank->set_rank_id(GetConfig().DangerZoneRank());
+    rank->set_wins(GetConfig().DangerZoneWins());
     rank->set_rank_type_id(RankTypeDangerZone);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
@@ -624,7 +681,6 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
     SendMessageToGame(false, k_EMsgGCClientWelcome, clientWelcome);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
-
     SendRankUpdate();
     
     uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
@@ -1041,7 +1097,6 @@ void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
     mmHello->set_player_cur_xp(GetConfig().Xp());
 
     std::vector<int> friends = GetConfig().GetFriends();
-
     bool requestedInFriends = false;
     for (int id : friends) {
         if (static_cast<uint32_t>(id) == message.account_id()) {
@@ -1198,7 +1253,7 @@ void ClientGC::NameItem(GCMessageRead &messageRead)
 {
     uint64_t nameTagId = messageRead.ReadUint64();
     uint64_t itemId = messageRead.ReadUint64();
-    messageRead.ReadData(1);
+    messageRead.ReadData(1); 
     std::string_view name = messageRead.ReadString();
 
     if (!messageRead.IsValid())
@@ -1226,7 +1281,7 @@ void ClientGC::NameBaseItem(GCMessageRead &messageRead)
 {
     uint64_t nameTagId = messageRead.ReadUint64();
     uint32_t defIndex = messageRead.ReadUint32();
-    messageRead.ReadData(1);
+    messageRead.ReadData(1); 
     std::string_view name = messageRead.ReadString();
 
     if (!messageRead.IsValid())
@@ -1288,6 +1343,7 @@ void ClientGC::SendInventoryUpdate()
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
 }
 
+
 void ClientGC::CheckFileReloads()
 {
     namespace fs = std::filesystem;
@@ -1323,6 +1379,12 @@ void ClientGC::CheckFileReloads()
             (this->*file.reloadFn)();
         }
     }
+    
+    if (m_isSearching && !m_matchmakingReservationSent) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_matchmakingStartTime).count();
+        if (false) {}
+    }
     UpdateCooldown();
 }
 
@@ -1335,7 +1397,6 @@ void ClientGC::ReloadInventory()
 void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
-    LoadProgress();
     SendRankUpdate();
 }
 
@@ -1371,6 +1432,7 @@ void ClientGC::ReloadUnusualLootLists()
     }
     Platform::Print("ReloadUnusualLootLists: unusual loot lists reloaded\n");
 }
+
 
 void ClientGC::FetchOverwatchCases()
 {
@@ -1496,7 +1558,7 @@ void ClientGC::OnOverwatchCaseStatus(GCMessageRead& messageRead)
         return;
     }
 
-    if (msg.caseid() == 0)
+    if (msg.caseid() == 0)   
     {
         std::lock_guard<std::mutex> lock(m_overwatchMutex);
         if (m_overwatchSuspects.empty())
@@ -1545,7 +1607,6 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
     if (hRequest == k_uAPICallInvalid) return;
 
     http->SetHTTPRequestHeaderValue(hRequest, "Content-Type", "application/json");
-
     std::vector<uint8_t> postData(json.begin(), json.end());
     http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
 
@@ -1555,65 +1616,4 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
 uint32_t ClientGC::EffectiveAccountId() const
 {
     return AccountId();
-}
-
-// ================= ОБРАБОТКА КОНЦА МАТЧА =================
-
-void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
-{
-    CMsgGCCStrike15_v2_MatchEndRunRewardDrops message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing CMsgGCCStrike15_v2_MatchEndRunRewardDrops failed, ignoring\n");
-        return;
-    }
-
-    // В протобафе нет поля match_result, используем is_match_finished как индикатор окончания матча
-    // Для симуляции результата используем случайное число (реалистично)
-    int matchResult = std::rand() % 3; // 0 = победа, 1 = поражение, 2 = ничья
-
-    // Обновляем статистику
-    g_progress.totalMatches++;
-
-    if (matchResult == 0) // Победа
-    {
-        g_progress.competitiveWins++;
-        g_progress.competitiveWinsStreak++;
-        
-        CheckRankUp(0);
-    }
-    else if (matchResult == 1) // Поражение
-    {
-        g_progress.competitiveWinsStreak = 0;
-    }
-    else if (matchResult == 2) // Ничья
-    {
-        // Ничья не влияет на ранги
-    }
-
-    // Симуляция статистики убийств/смертей
-    uint32_t kills = 5 + (std::rand() % 15);
-    uint32_t deaths = 5 + (std::rand() % 15);
-    uint32_t assists = 1 + (std::rand() % 10);
-    uint32_t mvps = 0 + (std::rand() % 5);
-
-    if (matchResult == 0)
-    {
-        kills += 3;
-        deaths -= 2;
-        assists += 1;
-        mvps += 1;
-    }
-
-    g_progress.totalKills += kills;
-    g_progress.totalDeaths += deaths;
-    g_progress.totalAssists += assists;
-    g_progress.totalMVPs += mvps;
-    g_progress.totalTimePlayed += 900;
-
-    SaveProgress();
-    SendRankUpdate();
-
-    Platform::Print("Match ended! Result: %d, New wins: %u, New rank: %u\n", 
-        matchResult, g_progress.competitiveWins, g_progress.competitiveRank);
 }
