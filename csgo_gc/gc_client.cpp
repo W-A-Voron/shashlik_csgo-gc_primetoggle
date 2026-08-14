@@ -12,29 +12,21 @@
 // ------------------------------------------------
 
 // Ранги (НЕ круглые числа)
-// Competitive: Legendary Eagle Master (12) -> победы 151
 constexpr int CONFIG_COMPETITIVE_RANK = 12;
 constexpr int CONFIG_COMPETITIVE_WINS = 151;
-// Wingman: Gold Nova Master (10) -> победы 52
 constexpr int CONFIG_WINGMAN_RANK = 10;
 constexpr int CONFIG_WINGMAN_WINS = 52;
-// Danger Zone: Scout Elite (7) -> победы 37
 constexpr int CONFIG_DANGERZONE_RANK = 7;
 constexpr int CONFIG_DANGERZONE_WINS = 37;
 
-// Уничтожать предметы после использования
 constexpr bool CONFIG_DESTROY_USED_ITEMS = true;
 
-// Коммендации (не круглые)
 constexpr int CONFIG_COMMENDED_FRIENDLY = 247;
 constexpr int CONFIG_COMMENDED_TEACHING = 84;
 constexpr int CONFIG_COMMENDED_LEADER = 41;
-
-// Уровень и опыт (Капитан, 24 уровень)
 constexpr int CONFIG_PLAYER_LEVEL = 24;
 constexpr int CONFIG_PLAYER_XP = 4237;
 
-// Веса редкости (реальные шансы)
 static const std::vector<RarityWeight> CONFIG_RARITY_WEIGHTS = {
     { ItemSchema::RarityCommon,   10000000 },
     { ItemSchema::RarityUncommon, 2000000 },
@@ -45,10 +37,7 @@ static const std::vector<RarityWeight> CONFIG_RARITY_WEIGHTS = {
     { ItemSchema::RarityUnusual,  1280 },
 };
 
-// ------------------------------------------------
-// Встроенный бинарный дамп price_sheet.txt
-// Сгенерирован из твоего файла. Гарантирует работу магазина.
-// ------------------------------------------------
+// Встроенный бинарный дамп price_sheet.txt (рабочий)
 static const unsigned char EMBEDDED_PRICE_SHEET[] = {
     0x00, 0x73, 0x74, 0x6F, 0x72, 0x65, 0x00, 0x01, 0x73, 0x74, 0x6F, 0x72, 0x65, 0x5F, 0x62, 0x61,
     0x6E, 0x6E, 0x65, 0x72, 0x5F, 0x6C, 0x61, 0x79, 0x6F, 0x75, 0x74, 0x00, 0x01, 0x31, 0x32, 0x30,
@@ -422,10 +411,6 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             OnOverwatchCaseUpdate(messageRead);
             break;
 
-        case k_EMsgGCCStrike15_ClientDeepStats:
-            OnClientDeepStats(messageRead);
-            break;
-
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled protobuf message %s\n",
                 MessageName(messageRead.TypeUnmasked()));
@@ -709,66 +694,6 @@ void ClientGC::SendRankUpdate()
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
 }
 
-void ClientGC::OnClientDeepStats(GCMessageRead &messageRead)
-{
-    // Это сообщение запрашивает статистику CS:GO 360.
-    // Отправляем реалистичные данные, синхронизированные с рангами.
-    CMsgGCCStrike15_ClientDeepStats stats;
-    stats.set_account_id(EffectiveAccountId());
-
-    // Общая статистика
-    stats.set_matches_played(500); // Всего сыграно матчей
-    stats.set_matches_won(CONFIG_COMPETITIVE_WINS); // Побед (151)
-    stats.set_matches_lost(500 - CONFIG_COMPETITIVE_WINS); // Поражений (349)
-    stats.set_matches_tied(0); // Ничьи
-
-    // Убийства и смерти
-    stats.set_kills(1025);
-    stats.set_deaths(850);
-    stats.set_assists(210);
-
-    // Время игры (в секундах)
-    stats.set_time_played(86400 * 15); // 15 дней
-
-    // Оружие (заглушки)
-    auto *weapon = stats.add_weapon_stats();
-    weapon->set_weapon_id(7); // AK-47
-    weapon->set_kills(350);
-    weapon->set_shots(5500);
-    weapon->set_hits(2750);
-
-    weapon = stats.add_weapon_stats();
-    weapon->set_weapon_id(9); // AWP
-    weapon->set_kills(120);
-    weapon->set_shots(600);
-    weapon->set_hits(300);
-
-    weapon = stats.add_weapon_stats();
-    weapon->set_weapon_id(4); // M4A4
-    weapon->set_kills(280);
-    weapon->set_shots(4800);
-    weapon->set_hits(2400);
-
-    // Карты (заглушки)
-    auto *map = stats.add_map_stats();
-    map->set_map_name("de_dust2");
-    map->set_matches_played(120);
-    map->set_matches_won(75);
-
-    map = stats.add_map_stats();
-    map->set_map_name("de_mirage");
-    map->set_matches_played(90);
-    map->set_matches_won(45);
-
-    map = stats.add_map_stats();
-    map->set_map_name("de_inferno");
-    map->set_matches_played(80);
-    map->set_matches_won(31);
-
-    // Отправляем статистику
-    SendMessageToGame(false, k_EMsgGCCStrike15_ClientDeepStats, stats);
-}
-
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     CMsgClientHello hello;
@@ -1014,7 +939,6 @@ void ClientGC::ApplySticker(GCMessageRead &messageRead)
 
 void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
 {
-    // Отправляем встроенный бинарный дамп прайс-листа
     CMsgStoreGetUserDataResponse response;
     response.set_result(1);
     response.set_price_sheet_version(1729);
