@@ -6,12 +6,18 @@
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
 #include "steam_hook.h"
+#include <cstdlib> // Для std::rand()
 
 // Файл для сохранения прогресса
 constexpr const char *ProgressFilePath = "csgo_gc/progress.txt";
 
 // ================= ГЛОБАЛЬНАЯ ПЕРЕМЕННАЯ ПРОГРЕССА =================
 static PlayerProgress g_progress;
+
+// ================= ПРОТОТИПЫ ФУНКЦИЙ =================
+static void LoadProgress();
+static void SaveProgress();
+static void CheckRankUp(uint32_t gameMode);
 
 // ================= ЗАГРУЗКА И СОХРАНЕНИЕ ПРОГРЕССА =================
 
@@ -62,16 +68,32 @@ static void SaveProgress()
 // Система рангов (3-5 побед на ранг)
 static void CheckRankUp(uint32_t gameMode)
 {
-    uint32_t &wins = (gameMode == 0) ? g_progress.competitiveWins : 
-                      (gameMode == 1) ? g_progress.wingmanWins : g_progress.dangerZoneWins;
-    uint32_t &rank = (gameMode == 0) ? g_progress.competitiveRank : 
-                      (gameMode == 1) ? g_progress.wingmanRank : g_progress.dangerZoneRank;
-
-    uint32_t winsNeeded = 3 + (rank / 5);
-    if (wins % winsNeeded == 0 && rank < 18)
+    if (gameMode == 0)
     {
-        rank++;
-        Platform::Print("Rank UP! New rank: %u\n", rank);
+        uint32_t winsNeeded = 3 + (g_progress.competitiveRank / 5);
+        if (g_progress.competitiveWins % winsNeeded == 0 && g_progress.competitiveRank < 18)
+        {
+            g_progress.competitiveRank++;
+            Platform::Print("Rank UP! New rank: %u\n", g_progress.competitiveRank);
+        }
+    }
+    else if (gameMode == 1)
+    {
+        uint32_t winsNeeded = 3 + (g_progress.wingmanRank / 5);
+        if (g_progress.wingmanWins % winsNeeded == 0 && g_progress.wingmanRank < 18)
+        {
+            g_progress.wingmanRank++;
+            Platform::Print("Wingman Rank UP! New rank: %u\n", g_progress.wingmanRank);
+        }
+    }
+    else if (gameMode == 2)
+    {
+        uint32_t winsNeeded = 3 + (g_progress.dangerZoneRank / 5);
+        if (g_progress.dangerZoneWins % winsNeeded == 0 && g_progress.dangerZoneRank < 15)
+        {
+            g_progress.dangerZoneRank++;
+            Platform::Print("Danger Zone Rank UP! New rank: %u\n", g_progress.dangerZoneRank);
+        }
     }
 }
 
