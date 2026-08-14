@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gc_const_csgo.h"
-#include "item_schema.h" // rarity constants
+#include "item_schema.h"
 
 struct RarityWeight
 {
@@ -13,81 +13,53 @@ class GCConfig
 {
 public:
     GCConfig();
-	void ReloadFromFile();
-    // options used by steam hook
-    uint32_t AppIdOverride() const { return m_appIdOverride; }
-    bool ShowCsgoGCServersOnly() const { return m_showCsgoGCServersOnly; }
+    void ReloadFromFile() {} // Файлы не используются
 
-    RankId CompetitiveRank() const { return m_competitiveRank; }
-    int CompetitiveWins() const { return m_competitiveWins; }
-    RankId WingmanRank() const { return m_wingmanRank; }
-    int WingmanWins() const { return m_wingmanWins; }
-    DangerZoneRankId DangerZoneRank() const { return m_dangerZoneRank; }
-    int DangerZoneWins() const { return m_dangerZoneWins; }
+    // === ЖЁСТКИЕ НАСТРОЙКИ ===
+    uint32_t AppIdOverride() const { return 4465480; }
+    bool ShowCsgoGCServersOnly() const { return true; }
 
-	bool ForceMaxRarity() const { return m_forceMaxRarity; }
-    bool DestroyUsedItems() const { return m_destroyUsedItems; }
-    bool RandomizeFloat() const { return m_randomizeFloat; }
+    // === РЕАЛИСТИЧНЫЙ РАНГ (Золотая Звезда 3 / Master Guardian 1) ===
+    RankId CompetitiveRank() const { return RankMasterGuardian1; }
+    int CompetitiveWins() const { return 98; }
 
-    bool VacBanned() const { return m_vacBanned; }
-	bool HasPrime() const { return m_hasPrime; }
-	uint32_t CompetitiveCooldownSeconds() const { return m_competitiveCooldownSeconds; }
+    RankId WingmanRank() const { return RankMasterGuardian1; }
+    int WingmanWins() const { return 42; }
 
-    int CommendedFriendly() const { return m_commendedFriendly; }
-    int CommendedTeaching() const { return m_commendedTeaching; }
-    int CommendedLeader() const { return m_commendedLeader; }
-    int Level() const { return m_level; }
-    int Xp() const { return m_xp; }
+    DangerZoneRankId DangerZoneRank() const { return DangerZoneRankScoutElite; }
+    int DangerZoneWins() const { return 15; }
 
-    std::string Country() const { return m_country; }
-    int Currency() const { return m_currency; }
+    // === НАСТРОЙКИ ИГРЫ ===
+    bool ForceMaxRarity() const { return false; }       // Реальные шансы выпадения
+    bool DestroyUsedItems() const { return true; }      // Предметы исчезают после использования
+    bool RandomizeFloat() const { return true; }
 
+    bool VacBanned() const { return false; }
+    bool HasPrime() const { return true; }
+    uint32_t CompetitiveCooldownSeconds() const { return 0; }
+
+    // === РЕАЛИСТИЧНЫЕ ДАННЫЕ СТАТИСТИКИ ===
+    int CommendedFriendly() const { return 12; }   // Дружелюбный
+    int CommendedTeaching() const { return 5; }    // Наставник
+    int CommendedLeader() const { return 3; }      // Лидер
+    int Level() const { return 28; }               // 28 уровень
+    int Xp() const { return 3200; }                // 3200/5000 до следующего уровня
+
+    std::string Country() const { return "RU"; }
+    int Currency() const { return 3; } // RUB
+
+    // === ШАНСЫ ВЫПАДЕНИЯ (как в реальном CS:GO) ===
     float GetRarityWeight(uint32_t rarity) const;
 
-    std::vector<int> GetFriends() const { return m_friends; };
+    std::vector<int> GetFriends() const { return { 1140104601, 7656119801234567, 7656119807654321 }; };
 
 private:
-	void Parse(const KeyValue& config);
-    // actually default to 4465480 instead of 730, people are going to use old configs
-    // and then wonder why the game doesn't work and open an issue on github otherwise
-    uint32_t m_appIdOverride{ 4465480 };
-    bool m_showCsgoGCServersOnly{ true };
+    bool m_forceMaxRarity;
+    bool m_destroyUsedItems;
+    bool m_randomizeFloat;
+    uint32_t m_competitiveCooldownSeconds;
 
-    RankId m_competitiveRank{ RankNone };
-    int m_competitiveWins{ 0 };
-    RankId m_wingmanRank{ RankNone };
-    int m_wingmanWins{ 0 };
-    DangerZoneRankId m_dangerZoneRank{ DangerZoneRankNone };
-    int m_dangerZoneWins{ 0 };
-
-	bool m_forceMaxRarity{ false };
-    bool m_destroyUsedItems{ true };
-    bool m_randomizeFloat{ true };
-
-    bool m_vacBanned{ false };
-	bool m_hasPrime{ true };
-	uint32_t m_competitiveCooldownSeconds{ 0 };
-    int m_commendedFriendly{ 0 };
-    int m_commendedTeaching{ 0 };
-    int m_commendedLeader{ 0 };
-    int m_level{ 0 };
-    int m_xp{ 0 };
-
-    std::string m_country{ "RU" };
-    int m_currency{ 3 };
-
-    // default to valve weights
-    std::vector<RarityWeight> m_rarityWeights{
-        { ItemSchema::RarityCommon, 10000000 },
-        { ItemSchema::RarityUncommon, 2000000 },
-        { ItemSchema::RarityRare, 400000 },
-        { ItemSchema::RarityMythical, 80000 },
-        { ItemSchema::RarityLegendary, 16000 },
-        { ItemSchema::RarityAncient, 3200 },
-        { ItemSchema::RarityUnusual, 1280 },
-    };
-
-    std::vector<int> m_friends{ 1140104601 };
+    std::vector<RarityWeight> m_rarityWeights;
 };
 
 GCConfig &GetConfig();
