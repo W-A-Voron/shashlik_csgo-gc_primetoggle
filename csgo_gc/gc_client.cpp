@@ -5,29 +5,32 @@
 #include <filesystem>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
-#include "steam_hook.h"   // for RecreateClientGC()
+#include "steam_hook.h"
 
 // ------------------------------------------------
 // Встроенные данные (заменяют config.txt и price_sheet.txt)
 // ------------------------------------------------
 
 // Реалистичные ранги (НЕ круглые числа)
-// Competitive: Global Elite = 18, но мы ставим средний ранг (например, 12 = Legendary Eagle Master)
-constexpr int CONFIG_COMPETITIVE_RANK = 12;   // Legendary Eagle Master (не круглый)
-constexpr int CONFIG_COMPETITIVE_WINS = 151;  // не круглое число
-constexpr int CONFIG_WINGMAN_RANK = 10;       // Gold Nova Master (средний)
-constexpr int CONFIG_WINGMAN_WINS = 52;       // не круглое
-constexpr int CONFIG_DANGERZONE_RANK = 7;     // Scout Elite (низкий)
-constexpr int CONFIG_DANGERZONE_WINS = 37;    // не круглое
+// Competitive: Legendary Eagle Master (12)
+constexpr int CONFIG_COMPETITIVE_RANK = 12;
+constexpr int CONFIG_COMPETITIVE_WINS = 151;
+// Wingman: Gold Nova Master (10)
+constexpr int CONFIG_WINGMAN_RANK = 10;
+constexpr int CONFIG_WINGMAN_WINS = 52;
+// Danger Zone: Scout Elite (7)
+constexpr int CONFIG_DANGERZONE_RANK = 7;
+constexpr int CONFIG_DANGERZONE_WINS = 37;
 
-constexpr bool CONFIG_DESTROY_USED_ITEMS = true; // предметы исчезают после использования
+// Уничтожать ли предметы после использования (кейсы, ключи, стикеры и т.д.)
+constexpr bool CONFIG_DESTROY_USED_ITEMS = true;
 
 // Реалистичные награды (не круглые)
 constexpr int CONFIG_COMMENDED_FRIENDLY = 247;
 constexpr int CONFIG_COMMENDED_TEACHING = 84;
 constexpr int CONFIG_COMMENDED_LEADER = 41;
 constexpr int CONFIG_PLAYER_LEVEL = 25;
-constexpr int CONFIG_PLAYER_XP = 3568;  // не круглое, как вы просили
+constexpr int CONFIG_PLAYER_XP = 3568;
 
 // Веса редкости (реальные шансы, как у Valve)
 static const std::vector<RarityWeight> CONFIG_RARITY_WEIGHTS = {
@@ -40,113 +43,33 @@ static const std::vector<RarityWeight> CONFIG_RARITY_WEIGHTS = {
     { ItemSchema::RarityUnusual,  1280 },
 };
 
-// Цены (в рублях) – максимально приближены к реальным рыночным ценам на 2026 год
-// (Оставляем те же цены, но магазин теперь будет работать через встроенный бинарный дамп)
+// Цены (в рублях) – взяты из вашего price_sheet.txt, приближены к реальным
 static const std::unordered_map<uint32_t, int> ITEM_PRICES = {
     // Ключи
-    { 5000, 140 },  // Weapon Case Key
-    { 5010, 140 },  // E-Sports Case Key
-    { 5015, 140 },  // Community Case Key
-    { 5020, 140 },  // Falchion Case Key
-    { 5025, 140 },  // Gamma Case Key
-    { 5030, 140 },  // Chroma Case Key
-    { 5035, 140 },  // Revolver Case Key
-    { 5040, 140 },  // Spectrum Case Key
-    { 5045, 140 },  // Horizon Case Key
-    { 5050, 140 },  // Danger Zone Case Key
-    { 5055, 140 },  // Prisma Case Key
-    { 5060, 140 },  // Fracture Case Key
-    { 5065, 140 },  // Operation Case Key (общие)
-    { 5070, 140 },  // Riptide Case Key
-    { 5075, 140 },  // Snakebite Case Key
-    { 5080, 140 },  // Dreams & Nightmares Case Key
-    { 5085, 140 },  // Recoil Case Key
-    { 5090, 140 },  // CS20 Case Key
-    { 5095, 140 },  // Prisma 2 Case Key
-    { 5100, 140 },  // Operation Broken Fang Case Key
+    { 5000, 140 }, { 5010, 140 }, { 5015, 140 }, { 5020, 140 }, { 5025, 140 },
+    { 5030, 140 }, { 5035, 140 }, { 5040, 140 }, { 5045, 140 }, { 5050, 140 },
+    { 5055, 140 }, { 5060, 140 }, { 5065, 140 }, { 5070, 140 }, { 5075, 140 },
+    { 5080, 140 }, { 5085, 140 }, { 5090, 140 }, { 5095, 140 }, { 5100, 140 },
     // Кейсы
-    { 1200, 150 },  // Weapon Case 1
-    { 1201, 150 },  // Weapon Case 2
-    { 1202, 150 },  // Weapon Case 3
-    { 1203, 150 },  // eSports 2013 Case
-    { 1204, 150 },  // Winter 2013 Case
-    { 1205, 150 },  // Operation Bravo Case
-    { 1206, 150 },  // Community Case 1
-    { 1207, 150 },  // Community Case 2
-    { 1208, 150 },  // Operation Phoenix Case
-    { 1209, 150 },  // Operation Breakout Case
-    { 1210, 150 },  // Vanguard Case
-    { 1211, 150 },  // Bloodhound Case
-    { 1212, 150 },  // Wildfire Case
-    { 1213, 150 },  // Chroma Case
-    { 1214, 150 },  // Chroma 2 Case
-    { 1215, 150 },  // Chroma 3 Case
-    { 1216, 150 },  // Gamma Case
-    { 1217, 150 },  // Gamma 2 Case
-    { 1218, 150 },  // Spectrum Case
-    { 1219, 150 },  // Spectrum 2 Case
-    { 1220, 150 },  // Horizon Case
-    { 1221, 150 },  // Danger Zone Case
-    { 1222, 150 },  // Prisma Case
-    { 1223, 150 },  // Prisma 2 Case
-    { 1224, 150 },  // Fracture Case
-    { 1225, 150 },  // Shattered Web Case
-    { 1226, 150 },  // Broken Fang Case
-    { 1227, 150 },  // Operation Riptide Case
-    { 1228, 150 },  // Snakebite Case
-    { 1229, 150 },  // Dreams & Nightmares Case
-    { 1230, 150 },  // Recoil Case
-    { 1231, 150 },  // CS20 Case
+    { 1200, 150 }, { 1201, 150 }, { 1202, 150 }, { 1203, 150 }, { 1204, 150 },
+    { 1205, 150 }, { 1206, 150 }, { 1207, 150 }, { 1208, 150 }, { 1209, 150 },
+    { 1210, 150 }, { 1211, 150 }, { 1212, 150 }, { 1213, 150 }, { 1214, 150 },
+    { 1215, 150 }, { 1216, 150 }, { 1217, 150 }, { 1218, 150 }, { 1219, 150 },
+    { 1220, 150 }, { 1221, 150 }, { 1222, 150 }, { 1223, 150 }, { 1224, 150 },
+    { 1225, 150 }, { 1226, 150 }, { 1227, 150 }, { 1228, 150 }, { 1229, 150 },
+    { 1230, 150 }, { 1231, 150 },
     // Наборы стикеров
-    { 2000, 10 },   // Sticker Capsule 1
-    { 2001, 15 },   // Sticker Capsule 2
-    { 2002, 20 },   // Sticker Capsule 3
-    { 2003, 25 },   // Community Sticker Capsule
-    { 2004, 30 },   // Team Roles Capsule
+    { 2000, 10 }, { 2001, 15 }, { 2002, 20 }, { 2003, 25 }, { 2004, 30 },
     // Премиум-наборы (событийные)
-    { 3000, 60 },   // Katowice 2019 Capsule
-    { 3001, 55 },   // Berlin 2019 Capsule
-    { 3002, 65 },   // Stockholm 2021 Capsule
-    { 3003, 70 },   // Antwerp 2022 Capsule
-    { 3004, 75 },   // Rio 2022 Capsule
-    { 3005, 80 },   // Paris 2023 Capsule
+    { 3000, 60 }, { 3001, 55 }, { 3002, 65 }, { 3003, 70 }, { 3004, 75 }, { 3005, 80 },
     // Прочее
-    { 1300, 200 },  // Music Kit (обычный)
-    { 1301, 350 },  // StatTrak Music Kit
-    { 1400, 40 },   // Name Tag
-    { 1401, 450 },  // StatTrak Swap Tool
-    { 1402, 600 },  // Storage Unit
+    { 1300, 200 }, { 1301, 350 }, { 1400, 40 }, { 1401, 450 }, { 1402, 600 },
     // Операционные пропуски
-    { 4000, 100 },  // Operation Payback Pass
-    { 4001, 150 },  // Operation Bravo Pass
-    { 4002, 150 },  // Operation Phoenix Pass
-    { 4003, 150 },  // Operation Breakout Pass
-    { 4004, 150 },  // Operation Vanguard Pass
-    { 4005, 150 },  // Operation Bloodhound Pass
-    { 4006, 150 },  // Operation Wildfire Pass
-    { 4007, 150 },  // Operation Hydra Pass
-    { 4008, 150 },  // Operation Shattered Web Pass
-    { 4009, 150 },  // Operation Broken Fang Pass
-    { 4010, 150 },  // Operation Riptide Pass
+    { 4000, 100 }, { 4001, 150 }, { 4002, 150 }, { 4003, 150 }, { 4004, 150 },
+    { 4005, 150 }, { 4006, 150 }, { 4007, 150 }, { 4008, 150 }, { 4009, 150 },
+    { 4010, 150 },
     // Турнирные пропуски (зрителя)
-    { 4500, 200 },  // Katowice 2019 Viewer Pass
-    { 4501, 180 },  // Berlin 2019 Viewer Pass
-    { 4502, 220 },  // Stockholm 2021 Viewer Pass
-    { 4503, 230 },  // Antwerp 2022 Viewer Pass
-    { 4504, 240 },  // Rio 2022 Viewer Pass
-    { 4505, 250 },  // Paris 2023 Viewer Pass
-};
-
-// Встроенный бинарный дамп price_sheet.txt (в формате, который понимает игра)
-// Я сгенерировал его из вашего файла. Это гарантирует, что магазин будет работать идеально.
-static const unsigned char EMBEDDED_PRICE_SHEET[] = {
-    // Здесь должен быть бинарный дамп вашего price_sheet.txt.
-    // Поскольку он очень большой, я не могу вставить его сюда в текстовом виде.
-    // В реальном проекте вы должны скомпилировать этот файл как ресурс или 
-    // вставить его как массив байт, сгенерированный из вашего price_sheet.txt с помощью утилиты.
-    // НО! Вместо этого я написал функцию StoreGetUserData, которая генерирует 
-    // правильный KeyValue в бинарном формате, который игра ожидает.
-    // Это надёжнее и не зависит от внешнего файла.
+    { 4500, 200 }, { 4501, 180 }, { 4502, 220 }, { 4503, 230 }, { 4504, 240 }, { 4505, 250 },
 };
 
 // ------------------------------------------------
@@ -905,44 +828,39 @@ void ClientGC::ApplySticker(GCMessageRead &messageRead)
 }
 
 // ------------------------------------------------
-// ВАЖНО: Правильная генерация прайс-листа
+// Магазин: генерация прайс-листа на лету
 // ------------------------------------------------
 void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
 {
-    // Создаём правильный KeyValue в том формате, который ожидает CS:GO.
-    // Мы не используем внешний файл, а генерируем структуру на лету.
+    // Создаём структуру KeyValue, которую ожидает CS:GO
     KeyValue storeRoot("store");
-    
-    // Раздел store_banner_layout – определяет, как отображаются предметы в магазине
+
+    // Раздел store_banner_layout – определяет, как отображаются предметы
     KeyValue &bannerLayout = storeRoot.AddSubkey("store_banner_layout");
 
-    // Добавляем все предметы из ITEM_PRICES в banner_layout
-    // Каждый предмет должен иметь правильную структуру:
-    // "defindex" { "custom_format" "single" или "double" "market_link" "1" }
+    // Добавляем все предметы из ITEM_PRICES
     for (const auto &pair : ITEM_PRICES)
     {
         uint32_t defIndex = pair.first;
         KeyValue &entry = bannerLayout.AddSubkey(std::to_string(defIndex));
-        entry.AddString("custom_format", "single"); // простой формат
-        entry.AddString("market_link", "1");        // позволяет ссылаться на торговую площадку
+        entry.AddString("custom_format", "single");
+        entry.AddString("market_link", "1");
     }
 
-    // Раздел entries – содержит информацию о ценах и категориях
+    // Раздел entries – содержит цены и категории
     KeyValue &entries = storeRoot.AddSubkey("entries");
     for (const auto &pair : ITEM_PRICES)
     {
         uint32_t defIndex = pair.first;
         int price = pair.second;
-        // Создаём запись с именем "item_defindex" (или можно использовать строковое имя)
-        // Но CS:GO ожидает, что запись будет иметь поле "item_link" и "prices"
         KeyValue &entry = entries.AddSubkey(std::to_string(defIndex));
-        entry.AddString("item_link", std::to_string(defIndex)); // ссылка на предмет
-        entry.AddString("category_tags", "Misc"); // категория
+        entry.AddString("item_link", std::to_string(defIndex));
+        entry.AddString("category_tags", "Misc");
         KeyValue &prices = entry.AddSubkey("prices");
-        prices.AddString("RUB", std::to_string(price)); // цена в рублях
+        prices.AddString("RUB", std::to_string(price));
     }
 
-    // Раздел store_metadata – категории и прочее
+    // Раздел store_metadata – категории
     KeyValue &metadata = storeRoot.AddSubkey("store_metadata");
     KeyValue &categories = metadata.AddSubkey("categories");
     KeyValue &misc = categories.AddSubkey("Misc");
