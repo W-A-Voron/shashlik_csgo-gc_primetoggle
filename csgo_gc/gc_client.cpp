@@ -12,8 +12,8 @@
 // ------------------------------------------------
 
 // Реалистичные ранги (НЕ круглые числа)
-// Competitive: Legendary Eagle Master (12), но вы хотите Captain (24) -> ставим 24
-constexpr int CONFIG_COMPETITIVE_RANK = 24;   // Captain (ваш запрос)
+// Competitive: Captain (24)
+constexpr int CONFIG_COMPETITIVE_RANK = 24;
 constexpr int CONFIG_COMPETITIVE_WINS = 151;
 // Wingman: Gold Nova Master (10)
 constexpr int CONFIG_WINGMAN_RANK = 10;
@@ -22,14 +22,14 @@ constexpr int CONFIG_WINGMAN_WINS = 52;
 constexpr int CONFIG_DANGERZONE_RANK = 7;
 constexpr int CONFIG_DANGERZONE_WINS = 37;
 
-// Уничтожать ли предметы после использования
+// Уничтожать ли предметы после использования (кейсы, ключи, стикеры и т.д.)
 constexpr bool CONFIG_DESTROY_USED_ITEMS = true;
 
 // Реалистичные награды (не круглые)
 constexpr int CONFIG_COMMENDED_FRIENDLY = 247;
 constexpr int CONFIG_COMMENDED_TEACHING = 84;
 constexpr int CONFIG_COMMENDED_LEADER = 41;
-constexpr int CONFIG_PLAYER_LEVEL = 24;       // Уровень 24, а не 25
+constexpr int CONFIG_PLAYER_LEVEL = 24;
 constexpr int CONFIG_PLAYER_XP = 3568;
 
 // Веса редкости (реальные шансы, как у Valve)
@@ -43,13 +43,14 @@ static const std::vector<RarityWeight> CONFIG_RARITY_WEIGHTS = {
     { ItemSchema::RarityUnusual,  1280 },
 };
 
-// Цены (в рублях) и ПРАВИЛЬНЫЕ СТРОКОВЫЕ ИДЕНТИФИКАТОРЫ для магазина
+// Структура для магазина
 struct StoreItem {
     uint32_t defIndex;
-    const char* itemLink;  // строковый ID, который ожидает магазин CS:GO
+    const char* itemLink;
     int priceRub;
 };
 
+// Цены и строковые идентификаторы для магазина
 static const std::vector<StoreItem> STORE_ITEMS = {
     // Ключи
     { 5000, "Weapon Case Key", 140 },
@@ -593,7 +594,7 @@ void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
 {
     KeyValue storeRoot("store");
 
-    // 1. store_banner_layout
+    // store_banner_layout
     KeyValue &bannerLayout = storeRoot.AddSubkey("store_banner_layout");
     for (const auto &item : STORE_ITEMS) {
         KeyValue &entry = bannerLayout.AddSubkey(std::to_string(item.defIndex));
@@ -601,17 +602,17 @@ void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
         entry.AddString("market_link", "1");
     }
 
-    // 2. entries – это то, что игра показывает в магазине
+    // entries – это то, что игра показывает в магазине
     KeyValue &entries = storeRoot.AddSubkey("entries");
     for (const auto &item : STORE_ITEMS) {
-        KeyValue &entry = entries.AddSubkey(item.itemLink);  // Важно: используем строковый ID!
+        KeyValue &entry = entries.AddSubkey(item.itemLink);  // Важно: строковый ID!
         entry.AddString("item_link", item.itemLink);
         entry.AddString("category_tags", "Misc");
         KeyValue &prices = entry.AddSubkey("prices");
         prices.AddString("RUB", std::to_string(item.priceRub));
     }
 
-    // 3. store_metadata – категории
+    // store_metadata – категории
     KeyValue &metadata = storeRoot.AddSubkey("store_metadata");
     KeyValue &categories = metadata.AddSubkey("categories");
     KeyValue &misc = categories.AddSubkey("Misc");
