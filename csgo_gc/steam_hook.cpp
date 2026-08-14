@@ -21,98 +21,8 @@ struct SteamNetworkingIdentity;
 #include "networking_client.h"
 #include "networking_server.h"
 
-// UserStatsReceived_t fails with the new csgo appid, which causes gc callbacks to not run
-// to work around this, spoof user stats requests when running under this appid specifically
-// we also need to patch serverbrowser to allow for appids over 900...
-static void CheckServerBrowserPatch()
-{
-    static bool attempted = false;
-
-    if (attempted) return;
-    attempted = true;
-
-    if (AppId::IsOriginal()) return;
-
-    if (!Platform::PatchServerBrowserAppId(AppId::GetOverride()))
-        Platform::Print("serverbrowser patch failed\n");
-    else
-        Platform::Print("serverbrowser patch succeeded\n");
-}
-
-class GCMessageQueue
-{
-public:
-    bool IsMessageAvailable(uint32_t &size)
-    {
-        if (m_messages.empty()) return false;
-        Message &message = m_messages.front();
-        size = static_cast<uint32_t>(message.buffer.size());
-        return true;
-    }
-
-    bool RetrieveMessage(uint32_t &type, void *buffer, uint32_t bufferSize, uint32_t &size)
-    {
-        if (m_messages.empty()) return false;
-        Message &message = m_messages.front();
-        type = message.type;
-        size = static_cast<uint32_t>(message.buffer.size());
-        if (bufferSize < message.buffer.size()) return false;
-        memcpy(buffer, message.buffer.data(), message.buffer.size());
-        m_messages.pop();
-        return true;
-    }
-
-    void AddMessage(uint32_t type, std::vector<uint8_t> &&buffer)
-    {
-        Message &dest = m_messages.emplace();
-        dest.type = type;
-        dest.buffer = std::move(buffer);
-    }
-
-private:
-    struct Message
-    {
-        uint32_t type{};
-        std::vector<uint8_t> buffer;
-    };
-    std::queue<Message> m_messages;
-};
-
-template<typename GC, typename Networking>
-class GCWrapper final
-{
-public:
-    template<typename... Args>
-    GCWrapper(ISteamNetworkingMessages *networkingMessages, Args &&...args)
-        : m_gc{ std::forward<Args>(args)... }
-        , m_networking{ networkingMessages }
-    {
-    }
-
-    GC m_gc;
-    Networking m_networking;
-    GCMessageQueue m_messageQueue;
-};
-
-static GCWrapper<ClientGC, NetworkingClient> *s_clientGC;
-static GCWrapper<ServerGC, NetworkingServer> *s_serverGC;
-
-template<size_t N>
-inline bool InterfaceMatches(const char *name, const char (&compare)[N])
-{
-    size_t length = strlen(name);
-    if (length != (N - 1)) return false;
-    if (!memcmp(name, compare, length)) return true;
-    if (!memcmp(name, compare, length - 3))
-    {
-        Platform::Print("Got interface version %s, expecting %s\n", name, compare);
-        return false;
-    }
-    return false;
-}
-
 // ============================================================
-// ПРОКСИ ДЛЯ ПОДМЕНЫ СТАТИСТИКИ
+// ПРОКСИ ДЛЯ ПОДМЕНЫ СТАТИСТИКИ (ОБЪЯВЛЕНО В САМОМ НАЧАЛЕ)
 // ============================================================
 
 constexpr int REAL_TOTAL_GAMES = 307;
@@ -208,8 +118,98 @@ public:
 };
 
 // ============================================================
-// ОСТАЛЬНОЙ КОД
+// ОСТАЛЬНОЙ КОД (БЕЗ ИЗМЕНЕНИЙ)
 // ============================================================
+
+// UserStatsReceived_t fails with the new csgo appid, which causes gc callbacks to not run
+// to work around this, spoof user stats requests when running under this appid specifically
+// we also need to patch serverbrowser to allow for appids over 900...
+static void CheckServerBrowserPatch()
+{
+    static bool attempted = false;
+
+    if (attempted) return;
+    attempted = true;
+
+    if (AppId::IsOriginal()) return;
+
+    if (!Platform::PatchServerBrowserAppId(AppId::GetOverride()))
+        Platform::Print("serverbrowser patch failed\n");
+    else
+        Platform::Print("serverbrowser patch succeeded\n");
+}
+
+class GCMessageQueue
+{
+public:
+    bool IsMessageAvailable(uint32_t &size)
+    {
+        if (m_messages.empty()) return false;
+        Message &message = m_messages.front();
+        size = static_cast<uint32_t>(message.buffer.size());
+        return true;
+    }
+
+    bool RetrieveMessage(uint32_t &type, void *buffer, uint32_t bufferSize, uint32_t &size)
+    {
+        if (m_messages.empty()) return false;
+        Message &message = m_messages.front();
+        type = message.type;
+        size = static_cast<uint32_t>(message.buffer.size());
+        if (bufferSize < message.buffer.size()) return false;
+        memcpy(buffer, message.buffer.data(), message.buffer.size());
+        m_messages.pop();
+        return true;
+    }
+
+    void AddMessage(uint32_t type, std::vector<uint8_t> &&buffer)
+    {
+        Message &dest = m_messages.emplace();
+        dest.type = type;
+        dest.buffer = std::move(buffer);
+    }
+
+private:
+    struct Message
+    {
+        uint32_t type{};
+        std::vector<uint8_t> buffer;
+    };
+    std::queue<Message> m_messages;
+};
+
+template<typename GC, typename Networking>
+class GCWrapper final
+{
+public:
+    template<typename... Args>
+    GCWrapper(ISteamNetworkingMessages *networkingMessages, Args &&...args)
+        : m_gc{ std::forward<Args>(args)... }
+        , m_networking{ networkingMessages }
+    {
+    }
+
+    GC m_gc;
+    Networking m_networking;
+    GCMessageQueue m_messageQueue;
+};
+
+static GCWrapper<ClientGC, NetworkingClient> *s_clientGC;
+static GCWrapper<ServerGC, NetworkingServer> *s_serverGC;
+
+template<size_t N>
+inline bool InterfaceMatches(const char *name, const char (&compare)[N])
+{
+    size_t length = strlen(name);
+    if (length != (N - 1)) return false;
+    if (!memcmp(name, compare, length)) return true;
+    if (!memcmp(name, compare, length - 3))
+    {
+        Platform::Print("Got interface version %s, expecting %s\n", name, compare);
+        return false;
+    }
+    return false;
+}
 
 class SteamGameCoordinatorProxy final : public ISteamGameCoordinator
 {
@@ -433,10 +433,10 @@ public:
     SteamAPICall_t ComputeNewPlayerCompatibility(CSteamID steamIDNewPlayer) override { return m_original->ComputeNewPlayerCompatibility(steamIDNewPlayer); }
     bool SendUserConnectAndAuthenticate_DEPRECATED(uint32 unIPClient, const void *pvAuthBlob, uint32 cubAuthBlobSize, CSteamID *pSteamIDUser) override { return m_original->SendUserConnectAndAuthenticate_DEPRECATED(unIPClient, pvAuthBlob, cubAuthBlobSize, pSteamIDUser); }
     CSteamID CreateUnauthenticatedUserConnection() override { return m_original->CreateUnauthenticatedUserConnection(); }
-    void SendUserDisconnect_DEPRECATED(CSteamID steamIDUser) override { m_original->SendUserDisconnect_DEPRECATED(steamIDUser); }
+    void SendUserDisconnect_DEPRECATED(CSteamID steamIDUser) override { return m_original->SendUserDisconnect_DEPRECATED(steamIDUser); }
     bool BUpdateUserData(CSteamID steamIDUser, const char *pchPlayerName, uint32 uScore) override { return m_original->BUpdateUserData(steamIDUser, pchPlayerName, uScore); }
-    void SetMasterServerHeartbeatInterval_DEPRECATED(int iHeartbeatInterval) override { m_original->SetMasterServerHeartbeatInterval_DEPRECATED(iHeartbeatInterval); }
-    void ForceMasterServerHeartbeat_DEPRECATED() override { m_original->ForceMasterServerHeartbeat_DEPRECATED(); }
+    void SetMasterServerHeartbeatInterval_DEPRECATED(int iHeartbeatInterval) override { return m_original->SetMasterServerHeartbeatInterval_DEPRECATED(iHeartbeatInterval); }
+    void ForceMasterServerHeartbeat_DEPRECATED() override { return m_original->ForceMasterServerHeartbeat_DEPRECATED(); }
 };
 
 class SteamUserProxy : public ISteamUser
@@ -592,6 +592,7 @@ public:
         }
         else if (InterfaceMatches(version, STEAMUSERSTATS_INTERFACE_VERSION))
         {
+            // Возвращаем наш прокси для статистики
             return GetOrCreate<ISteamUserStats>(m_steamUserStats, static_cast<ISteamUserStats *>(original));
         }
         else if (InterfaceMatches(version, STEAMGAMESERVER_INTERFACE_VERSION))
