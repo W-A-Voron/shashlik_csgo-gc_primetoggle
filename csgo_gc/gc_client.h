@@ -8,24 +8,6 @@
 #include <steam/isteamhttp.h>
 #include <steam/steam_api_common.h>
 
-// Структура для хранения динамического прогресса (дублируется из .cpp для полноты)
-struct PlayerProgress
-{
-    uint32_t competitiveRank = 13;
-    uint32_t competitiveWins = 247;
-    uint32_t wingmanRank = 10;
-    uint32_t wingmanWins = 41;
-    uint32_t dangerZoneRank = 7;
-    uint32_t dangerZoneWins = 22;
-    uint32_t totalMatches = 312;
-    uint32_t totalKills = 1847;
-    uint32_t totalDeaths = 1123;
-    uint32_t totalAssists = 489;
-    uint32_t totalMVPs = 236;
-    uint32_t totalTimePlayed = 27684;
-    uint32_t competitiveWinsStreak = 3;
-};
-
 class ClientGC final : public SharedGC
 {
 public:
@@ -35,25 +17,22 @@ public:
 
     uint64_t GetSteamId() const { return m_steamId; }
 
-    // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
     void OnOverwatchCaseStatus(GCMessageRead &messageRead);
     void OnOverwatchCaseUpdate(GCMessageRead &messageRead);
 
 private:
-    KeyValue m_priceSheet;          // cached price_sheet.txt
-    KeyValue m_passes;              // cached passes.txt
-    KeyValue m_unusualLootLists;    // cached unusual_loot_lists.txt
+    KeyValue m_priceSheet;
+    KeyValue m_passes;
+    KeyValue m_unusualLootLists;
 
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
     bool m_isSearching{ false };
-
-    // event handlers
+    
     void HandleMessage(uint32_t type, const void *data, uint32_t size);
     void HandleNetMessage(const void *data, uint32_t size);
     void HandleSOCacheRequest();
 
-    // send to the local game and the game server we're connected to (if we're connected)
     void SendMessageToGame(bool sendToGameServer, uint32_t type,
         const google::protobuf::MessageLite &message, uint64_t jobId = JobIdInvalid);
 
@@ -90,12 +69,10 @@ private:
     void OnMatchmakingStart(GCMessageRead &messageRead);
     void OnMatchmakingStop(GCMessageRead &messageRead);
     void SendMatchmakingUpdate();
-    
     const uint64_t m_steamId;
     void ProcessGiftUse(uint64_t giftId);
     Inventory m_inventory;
 
-    // microtransactions, we only have one going at a time
     uint64_t m_transactionId{};
     std::vector<uint64_t> m_transactionItemIds;
 
@@ -106,8 +83,7 @@ private:
     void ReloadPasses();
     void ReloadUnusualLootLists();
 
-    // Overwatch data (only one set)
-    std::vector<uint32_t> m_overwatchSuspects;   // account IDs from overwatch.json
+    std::vector<uint32_t> m_overwatchSuspects;
     size_t m_nextOverwatchIndex = 0;
     uint64_t m_nextCaseId = 1;
     std::mutex m_overwatchMutex;
@@ -116,14 +92,12 @@ private:
     void SendOverwatchCaseAssignment(uint32_t suspectAccountId);
     void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate &msg);
 
-    // Helper: parse "STEAM_0:X:YYYY" -> account ID
     static uint32_t SteamIDStringToAccountId(const std::string& str);
 
-    // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
     void SendMatchmakingHelloUpdate();
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
-    uint32_t EffectiveAccountId() const;
+    uint32_t EffectiveAccountId() const { return AccountId(); }
     std::chrono::steady_clock::time_point m_matchmakingStartTime;
     bool m_matchmakingReservationSent = false;
     uint64_t m_matchmakingReservationId = 0;
@@ -133,18 +107,8 @@ private:
     void SendCompetitiveCooldown();
     void UpdateCooldown();
 
-    // ================= НОВЫЕ ФУНКЦИИ ДЛЯ ДИНАМИЧЕСКОГО ПРОГРЕССА =================
-
-    // Обработка конца матча (победы/поражения, обновление рангов и статистики)
-    void OnMatchEndRunRewardDrops(GCMessageRead &messageRead);
-
-    // Загрузка и сохранение прогресса из/в файл csgo_gc/progress.txt
-    static void LoadProgress();
-    static void SaveProgress();
-
-    // Проверка повышения ранга (реалистичная система: 3-5 побед на ранг)
-    static void CheckRankUp(uint32_t gameMode);
-
-    // Хранилище прогресса (статическое, чтобы сохранялось между перезагрузками)
-    static PlayerProgress s_progress;
+    // --- НОВЫЕ ПОЛЯ ДЛЯ ДИНАМИЧЕСКОЙ СТАТИСТИКИ ---
+    bool m_hasCompletedMatch{ false };
+    void OnMatchEnd(GCMessageRead &messageRead);
+    // ---------------------------------------------
 };
