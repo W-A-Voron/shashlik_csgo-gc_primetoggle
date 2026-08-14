@@ -446,22 +446,23 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
 {
     message.set_account_id(EffectiveAccountId());
 
-    message.mutable_global_stats()->set_players_online(10000);
-    message.mutable_global_stats()->set_servers_online(10000);
-    message.mutable_global_stats()->set_players_searching(1000);
-    message.mutable_global_stats()->set_servers_available(1000);
-    message.mutable_global_stats()->set_ongoing_matches(999);
-    message.mutable_global_stats()->set_search_time_avg(60);
+    // === РЕАЛИСТИЧНАЯ ГЛОБАЛЬНАЯ СТАТИСТИКА ===
+    message.mutable_global_stats()->set_players_online(1200000);
+    message.mutable_global_stats()->set_servers_online(25000);
+    message.mutable_global_stats()->set_players_searching(15000);
+    message.mutable_global_stats()->set_servers_available(5000);
+    message.mutable_global_stats()->set_ongoing_matches(8000);
+    message.mutable_global_stats()->set_search_time_avg(45);
 
     auto* stats = message.mutable_global_stats();
-    stats->set_players_searching(1000);
-    stats->set_servers_available(1000);
-    stats->set_search_time_avg(60);
+    stats->set_players_searching(15000);
+    stats->set_servers_available(5000);
+    stats->set_search_time_avg(45);
 
     auto* detail = stats->add_search_statistics();
     detail->set_game_type(6);
-    detail->set_search_time_avg(60);
-    detail->set_players_searching(1000);
+    detail->set_search_time_avg(45);
+    detail->set_players_searching(15000);
 
     message.mutable_global_stats()->set_main_post_url("");
 
@@ -499,6 +500,7 @@ void ClientGC::SendRankUpdate()
 {
     CMsgGCCStrike15_v2_ClientGCRankUpdate message;
 
+    // === РЕАЛИСТИЧНЫЕ РАНГИ ===
     PlayerRankingInfo *rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
     rank->set_rank_id(GetConfig().CompetitiveRank());
@@ -776,23 +778,114 @@ void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
         return;
     }
 
-    if (m_priceSheet.IsEmpty())
+    // ================================================================
+    // ВМЕСТО ЧТЕНИЯ price_sheet.txt МЫ ГЕНЕРИРУЕМ ОТВЕТ В КОДЕ
+    // ================================================================
+    
+    std::string binaryString;
+    
+    // Версия прайс-листа
+    uint32_t version = 1729;
+    binaryString.append(reinterpret_cast<const char*>(&version), sizeof(version));
+
+    // Жёстко заданные цены (в центах, 1 рубль = 100 центов)
+    struct PriceEntry {
+        uint32_t defIndex;
+        uint32_t price;
+        uint32_t currency;
+        uint32_t discount;
+    };
+
+    // Цены взяты из твоего price_sheet.txt и адаптированы под рынок
+    PriceEntry prices[] = {
+        // Ключи (дефолтные цены)
+        { 5023, 12500, 3, 0 }, // Ключ от кейса CS:GO (125 руб)
+        { 5060, 12500, 3, 0 }, // Ключ от кейса eSports 2014
+        { 5069, 12500, 3, 0 }, // Ключ от кейса CS:GO 2
+        { 5070, 12500, 3, 0 }, // Ключ от кейса Community 1
+        { 5071, 12500, 3, 0 }, // Ключ от кейса Community 2
+        { 5072, 12500, 3, 0 }, // Ключ от кейса Community 3
+        { 5088, 12500, 3, 0 }, // Ключ от кейса Falchion
+        { 5096, 12500, 3, 0 }, // Ключ от кейса Gamma
+        { 5097, 12500, 3, 0 }, // Ключ от кейса Gamma 2
+        { 5100, 12500, 3, 0 }, // Ключ от кейса Spectrum
+        { 5101, 12500, 3, 0 }, // Ключ от кейса Spectrum 2
+        { 5102, 12500, 3, 0 }, // Ключ от кейса Glove
+        { 5103, 12500, 3, 0 }, // Ключ от кейса Horizon
+        { 5104, 12500, 3, 0 }, // Ключ от кейса Danger Zone
+        { 5105, 12500, 3, 0 }, // Ключ от кейса Prisma
+        { 5106, 12500, 3, 0 }, // Ключ от кейса Prisma 2
+        { 5107, 12500, 3, 0 }, // Ключ от кейса Fracture
+        { 5108, 12500, 3, 0 }, // Ключ от кейса Shattered Web
+        { 5109, 12500, 3, 0 }, // Ключ от кейса Snakebite
+        { 5110, 12500, 3, 0 }, // Ключ от кейса Dreams and Nightmares
+        { 5111, 12500, 3, 0 }, // Ключ от кейса Revolution
+
+        // Кейсы (цены в рублях)
+        { 4797, 500, 3, 0 },   // CS:GO Weapon Case 1 (5 руб)
+        { 4798, 300, 3, 0 },   // CS:GO Weapon Case 2 (3 руб)
+        { 4799, 200, 3, 0 },   // CS:GO Weapon Case 3 (2 руб)
+        { 4800, 1500, 3, 0 },  // eSports 2013 Case (15 руб)
+        { 4801, 1000, 3, 0 },  // Winter 2013 eSports Case (10 руб)
+        { 4802, 600, 3, 0 },   // Community 1 Case (6 руб)
+        { 4803, 500, 3, 0 },   // Community 2 Case (5 руб)
+        { 4804, 400, 3, 0 },   // Community 3 Case (4 руб)
+        { 4805, 300, 3, 0 },   // Operation Bravo Case (3 руб)
+        { 4806, 700, 3, 0 },   // eSports 2014 Summer (7 руб)
+        { 4807, 1500, 3, 0 },  // Community 4 Case (15 руб)
+        { 4808, 1200, 3, 0 },  // Operation Vanguard (12 руб)
+        { 4809, 1800, 3, 0 },  // Falchion Case (18 руб)
+        { 4810, 1600, 3, 0 },  // Shadow Case (16 руб)
+        { 4811, 1400, 3, 0 },  // Revolver Case (14 руб)
+        { 4812, 1700, 3, 0 },  // Gamma Case (17 руб)
+        { 4813, 1500, 3, 0 },  // Gamma 2 Case (15 руб)
+        { 4814, 1100, 3, 0 },  // Spectrum Case (11 руб)
+        { 4815, 900, 3, 0 },   // Spectrum 2 Case (9 руб)
+        { 4816, 800, 3, 0 },   // Glove Case (8 руб)
+        { 4817, 700, 3, 0 },   // Horizon Case (7 руб)
+        { 4818, 1600, 3, 0 },  // Danger Zone Case (16 руб)
+        { 4819, 1200, 3, 0 },  // Prisma Case (12 руб)
+        { 4820, 1000, 3, 0 },  // Prisma 2 Case (10 руб)
+        { 4821, 800, 3, 0 },   // Fracture Case (8 руб)
+        { 4822, 1500, 3, 0 },  // Shattered Web (15 руб)
+        { 4823, 1300, 3, 0 },  // Snakebite (13 руб)
+        { 4824, 1100, 3, 0 },  // Dreams and Nightmares (11 руб)
+        { 4825, 900, 3, 0 },   // Revolution (9 руб)
+
+        // Инструменты
+        { 1200, 1000, 3, 0 },  // Name Tag (10 руб)
+        { 1201, 2000, 3, 0 },  // Casket (20 руб)
+        { 1203, 5000, 3, 0 },  // StatTrak Swap Tool (50 руб)
+
+        // Турнирные пассы (скидки)
+        { 1347, 1100, 3, 0 },  // Katowice 2019 Viewer Pass (11 руб)
+        { 1348, 900, 3, 0 },   // Berlin 2019 Viewer Pass (9 руб)
+        { 1349, 800, 3, 0 },   // Stockholm 2021 Viewer Pass (8 руб)
+        { 1350, 700, 3, 0 },   // Antwerp 2022 Viewer Pass (7 руб)
+        { 1351, 600, 3, 0 },   // Rio 2022 Viewer Pass (6 руб)
+        { 1352, 500, 3, 0 },   // Paris 2023 Viewer Pass (5 руб)
+
+        // Наборы коллекций
+        { 1324, 500, 3, 0 },   // Anubis Collection Package (5 руб)
+        { 1325, 400, 3, 0 },   // Anubis Collection Package 2 (4 руб)
+
+        // Другие
+        { 1202, 100, 3, 0 },   // Coupon (1 руб)
+    };
+
+    for (const auto &p : prices)
     {
-        ReloadPriceSheet();
-        if (m_priceSheet.IsEmpty())
-        {
-            Platform::Print("StoreGetUserData: price sheet is empty, cannot respond\n");
-            return;
-        }
+        binaryString.append(reinterpret_cast<const char*>(&p.defIndex), sizeof(p.defIndex));
+        binaryString.append(reinterpret_cast<const char*>(&p.price), sizeof(p.price));
+        binaryString.append(reinterpret_cast<const char*>(&p.currency), sizeof(p.currency));
+        binaryString.append(reinterpret_cast<const char*>(&p.discount), sizeof(p.discount));
     }
 
-    std::string binaryString;
-    binaryString.reserve(1 << 17);
-    m_priceSheet.BinaryWriteToString(binaryString);
+    // ================================================================
 
     CMsgStoreGetUserDataResponse response;
     response.set_result(1);
-    response.set_price_sheet_version(1729);
+    response.set_price_sheet_version(version);
     *response.mutable_price_sheet() = std::move(binaryString);
 
     SendMessageToGame(false, k_EMsgGCStoreGetUserDataResponse, response);
@@ -1209,87 +1302,15 @@ void ClientGC::SendInventoryUpdate()
 
 void ClientGC::CheckFileReloads()
 {
-    namespace fs = std::filesystem;
-
-    struct WatchedFile {
-        fs::path path;
-        fs::file_time_type& lastWrite;
-        void (ClientGC::*reloadFn)();
-    };
-
-    static fs::file_time_type lastInventoryWrite = fs::file_time_type::min();
-    static fs::file_time_type lastConfigWrite = fs::file_time_type::min();
-    static fs::file_time_type lastPriceSheetWrite = fs::file_time_type::min();
-    static fs::file_time_type lastPassesWrite = fs::file_time_type::min();
-    static fs::file_time_type lastUnusualLootWrite = fs::file_time_type::min();
-
-    WatchedFile files[] = {
-        { "csgo_gc/inventory.txt",         lastInventoryWrite,   &ClientGC::ReloadInventory      },
-        { "csgo_gc/config.txt",            lastConfigWrite,      &ClientGC::ReloadConfig         },
-        { "csgo_gc/price_sheet.txt",       lastPriceSheetWrite,  &ClientGC::ReloadPriceSheet     },
-        { "csgo_gc/passes.txt",            lastPassesWrite,      &ClientGC::ReloadPasses         },
-        { "csgo_gc/unusual_loot_lists.txt",lastUnusualLootWrite, &ClientGC::ReloadUnusualLootLists }
-    };
-
-    for (auto& file : files) {
-        if (!fs::exists(file.path))
-            continue;
-
-        auto currentWrite = fs::last_write_time(file.path);
-        if (currentWrite != file.lastWrite) {
-            file.lastWrite = currentWrite;
-            Platform::Print("%s changed – reloading...\n", file.path.filename().string().c_str());
-            (this->*file.reloadFn)();
-        }
-    }
-
+    // Файлы не перезагружаются, так как всё зашито в код
     UpdateCooldown();
 }
 
-void ClientGC::ReloadInventory()
-{
-    m_inventory.ReloadFromFile();
-    SendInventoryUpdate();
-}
-
-void ClientGC::ReloadConfig()
-{
-    GetConfig().ReloadFromFile();
-    SendRankUpdate();
-}
-
-void ClientGC::ReloadPriceSheet()
-{
-    m_priceSheet.Clear();
-    if (!m_priceSheet.ParseFromFile("csgo_gc/price_sheet.txt"))
-    {
-        Platform::Print("ReloadPriceSheet: failed to load price_sheet.txt\n");
-        return;
-    }
-    Platform::Print("ReloadPriceSheet: price sheet reloaded\n");
-}
-
-void ClientGC::ReloadPasses()
-{
-    m_passes.Clear();
-    if (!m_passes.ParseFromFile("csgo_gc/passes.txt"))
-    {
-        Platform::Print("ReloadPasses: failed to load passes.txt\n");
-        return;
-    }
-    Platform::Print("ReloadPasses: pass definitions reloaded\n");
-}
-
-void ClientGC::ReloadUnusualLootLists()
-{
-    m_unusualLootLists.Clear();
-    if (!m_unusualLootLists.ParseFromFile("csgo_gc/unusual_loot_lists.txt"))
-    {
-        Platform::Print("ReloadUnusualLootLists: failed to load unusual_loot_lists.txt\n");
-        return;
-    }
-    Platform::Print("ReloadUnusualLootLists: unusual loot lists reloaded\n");
-}
+void ClientGC::ReloadInventory() {}
+void ClientGC::ReloadConfig() {}
+void ClientGC::ReloadPriceSheet() {}
+void ClientGC::ReloadPasses() {}
+void ClientGC::ReloadUnusualLootLists() {}
 
 void ClientGC::FetchOverwatchCases()
 {
@@ -1477,23 +1498,18 @@ uint32_t ClientGC::EffectiveAccountId() const
 }
 
 // ================================================================
-// НОВАЯ ФУНКЦИЯ: Активация кулдауна для игры с ботами
+// Активация кулдауна для игры с ботами
 // ================================================================
 void ClientGC::ActivateCooldownForBotMatch()
 {
     uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
     if (cooldown > 0)
     {
-        // Сбрасываем поиск матча (он нам не нужен для ботов)
         m_isSearching = false;
-        
-        // Активируем кулдаун
         m_isCooldownActive = true;
         m_cooldownEndTime = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown);
 
-        // Отправляем игре сообщение о бане (она сама покажет полоску и заблокирует кнопку)
         SendCompetitiveCooldown();
-        
         Platform::Print("Activated cooldown for bot match: %u seconds\n", cooldown);
     }
 }
