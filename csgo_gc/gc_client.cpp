@@ -100,7 +100,6 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 
         SendMatchmakingUpdate(); 
         SendCompetitiveCooldown(); 
-        Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
         return;
     }
 
@@ -401,14 +400,10 @@ static void BuildCSWelcome(CMsgCStrike15Welcome &message)
     message.set_last_ip_address(MakeAddress(127, 0, 0, 1));
 }
 
-// ============================================================
-// ГЛАВНАЯ ФУНКЦИЯ: ОТПРАВКА СТАТИСТИКИ (ХАРДКОД ЦИФР)
-// ============================================================
 void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
 {
     message.set_account_id(EffectiveAccountId());
     
-    // Онлайн и поиск
     message.mutable_global_stats()->set_players_online(1500);
     message.mutable_global_stats()->set_servers_online(1200);
     message.mutable_global_stats()->set_players_searching(600);
@@ -422,7 +417,6 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     detail->set_search_time_avg(42);
     detail->set_players_searching(600);
 
-    // Вак, похвалы, уровень
     message.set_vac_banned(GetConfig().VacBanned());
     message.mutable_commendation()->set_cmd_friendly(22);
     message.mutable_commendation()->set_cmd_teaching(15);
@@ -765,34 +759,145 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_Account_RequestCoPlays, message);
 }
 
+// ============================================================
+// ПЕРЕХВАТ СТАТИСТИКИ И ЗАПОЛНЕНИЕ ХАРДКОДНЫМИ ДАННЫМИ
+// ============================================================
 void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
 {
-    CMsgGCCStrike15_v2_ClientRequestPlayersProfile message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    CMsgGCCStrike15_v2_ClientRequestPlayersProfile request;
+    if (!messageRead.ReadProtobuf(request)) return;
+
+    uint32_t requestedAccountId = request.account_id();
 
     CMsgGCCStrike15_v2_PlayersProfile response;
-    response.set_request_id(message.account_id());
+    response.set_request_id(requestedAccountId);
 
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello* mmHello = response.add_account_profiles();
-    mmHello->set_account_id(message.account_id());
-    mmHello->mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
-    mmHello->mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
-    mmHello->mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
-    mmHello->set_player_level(GetConfig().Level());
-    mmHello->set_player_cur_xp(GetConfig().Xp());
+    // 1. Базовый профиль (уровень, похвалы, XP)
+    auto* profile = response.add_account_profiles();
+    profile->set_account_id(requestedAccountId);
+    profile->mutable_commendation()->set_cmd_friendly(22);
+    profile->mutable_commendation()->set_cmd_teaching(15);
+    profile->mutable_commendation()->set_cmd_leader(8);
+    profile->set_player_level(GetConfig().Level());
+    profile->set_player_cur_xp(GetConfig().Xp());
 
-    std::vector<int> friends = GetConfig().GetFriends();
-    bool requestedInFriends = false;
-    for (int id : friends) {
-        if (static_cast<uint32_t>(id) == message.account_id()) {
-            requestedInFriends = true;
-            break;
-        }
-    }
-    if (!requestedInFriends) {
-        friends.push_back(static_cast<int>(message.account_id()));
-    }
+    // 2. СТАТИСТИКА ПО ОРУЖИЮ (Лучшее оружие, убийства)
+    // 2.1 AK-47
+    auto* weapon1 = response.add_weapon_stats();
+    weapon1->set_weapon_id(7); // AK-47
+    weapon1->set_kills(394);
+    weapon1->set_shots(4560);
+    weapon1->set_hits(2140);
 
+    // 2.2 M4A4
+    auto* weapon2 = response.add_weapon_stats();
+    weapon2->set_weapon_id(16); // M4A4
+    weapon2->set_kills(282);
+    weapon2->set_shots(4320);
+    weapon2->set_hits(1980);
+
+    // 2.3 AWP
+    auto* weapon3 = response.add_weapon_stats();
+    weapon3->set_weapon_id(9); // AWP
+    weapon3->set_kills(147);
+    weapon3->set_shots(490);
+    weapon3->set_hits(320);
+
+    // 3. СТАТИСТИКА ПО КАРТАМ (Победы на картах)
+    // 3.1 Mirage
+    auto* map1 = response.add_map_stats();
+    map1->set_map_id(8); // de_mirage
+    map1->set_wins(94);
+    map1->set_losses(62);
+
+    // 3.2 Dust II
+    auto* map2 = response.add_map_stats();
+    map2->set_map_id(3); // de_dust2
+    map2->set_wins(86);
+    map2->set_losses(56);
+
+    // 3.3 Inferno
+    auto* map3 = response.add_map_stats();
+    map3->set_map_id(5); // de_inferno
+    map3->set_wins(72);
+    map3->set_losses(48);
+
+    // 4. ОБЩАЯ СТАТИСТИКА
+    auto* stats = response.mutable_total_stats();
+    stats->set_games_played(412);
+    stats->set_wins(286);
+    stats->set_losses(84);
+    stats->set_ties(42);
+    stats->set_total_kills(6847);
+    stats->set_total_deaths(5249);
+    stats->set_total_assists(1890);
+    stats->set_damage_done(845000);
+    stats->set_mvps(342);
+    stats->set_time_played(41280); // в минутах (~28 дней игры)
+    stats->set_rounds_played(8920);
+    stats->set_rounds_won(5120);
+    stats->set_rounds_lost(3800);
+    
+    // 5. СРЕДНИЕ ПОКАЗАТЕЛИ
+    stats->set_avg_kills_per_round(0.77f);
+    stats->set_avg_deaths_per_round(0.59f);
+    stats->set_avg_assists_per_round(0.21f);
+    stats->set_kd_ratio(1.30f);
+    stats->set_hs_percentage(19.0f);
+    stats->set_rating(1.12f);
+
+    // 6. СТАТИСТИКА ГРАНАТ
+    auto* hegrenade = stats->mutable_hegrenade_stats();
+    hegrenade->set_damage_total(34200);
+    hegrenade->set_damage_avg(38.2f);
+    hegrenade->set_kills(42);
+
+    auto* flashbang = stats->mutable_flashbang_stats();
+    flashbang->set_players_flashed(390);
+    flashbang->set_avg_players_flashed(1.4f);
+
+    // 7. ПОСЛЕДНИЕ 10 МАТЧЕЙ
+    const uint64_t now = static_cast<uint64_t>(time(nullptr));
+    // Матч 1
+    auto* match1 = response.add_recent_matches();
+    match1->set_match_id(1001);
+    match1->set_rounds_won(16);
+    match1->set_rounds_lost(14);
+    match1->set_result(1); // Победа
+    match1->set_map_id(8); // de_mirage
+    match1->set_timestamp(now - 3600 * 24);
+    match1->set_kills(28);
+    match1->set_deaths(22);
+    match1->set_assists(8);
+    match1->set_mvps(4);
+
+    // Матч 2
+    auto* match2 = response.add_recent_matches();
+    match2->set_match_id(1002);
+    match2->set_rounds_won(13);
+    match2->set_rounds_lost(16);
+    match2->set_result(0); // Поражение
+    match2->set_map_id(3); // de_dust2
+    match2->set_timestamp(now - 3600 * 48);
+    match2->set_kills(18);
+    match2->set_deaths(24);
+    match2->set_assists(6);
+    match2->set_mvps(2);
+
+    // Матч 3
+    auto* match3 = response.add_recent_matches();
+    match3->set_match_id(1003);
+    match3->set_rounds_won(16);
+    match3->set_rounds_lost(12);
+    match3->set_result(1); // Победа
+    match3->set_map_id(5); // de_inferno
+    match3->set_timestamp(now - 3600 * 72);
+    match3->set_kills(22);
+    match3->set_deaths(18);
+    match3->set_assists(10);
+    match3->set_mvps(5);
+
+    // Отправляем всё клиенту
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayersProfile, response);
 }
 
