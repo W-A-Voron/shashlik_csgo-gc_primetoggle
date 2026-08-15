@@ -6,7 +6,7 @@
 #include <fstream>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
-#include "steam_hook.h"   // for RecreateClientGC()
+#include "steam_hook.h"
 
 // --- НОВОВВЕДЕНИЯ ДЛЯ СОХРАНЕНИЯ ПРОГРЕССА ---
 #define CONFIG_PATH "csgo_gc/config.txt"
@@ -34,7 +34,6 @@ static void UpdateConfigFile(int newRank, int newWins, int wingmanRank, int wing
             size_t valueEnd = fileContent.find('"', valueStart);
             std::string newLine = "\"" + key + "\"\t\"" + std::to_string(value) + "\"";
             
-            // Заменяем строку целиком
             size_t lineStart = fileContent.rfind('\n', pos);
             if (lineStart == std::string::npos) lineStart = 0;
             size_t lineEnd = fileContent.find('\n', pos + searchKey.length());
@@ -108,14 +107,13 @@ void ClientGC::SendCompetitiveCooldown()
             m_cooldownEndTime - std::chrono::steady_clock::now()).count();
         seconds = (remaining > 0) ? static_cast<uint32_t>(remaining) : 0;
         if (seconds == 0) {
-            // expired during the check
             m_isCooldownActive = false;
         }
     }
 
     CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
     penalty.set_account_id(EffectiveAccountId());
-    penalty.set_reason(0); // competitive cooldown
+    penalty.set_reason(0);
     penalty.set_seconds(seconds);
     penalty.set_communication_cooldown(false);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
@@ -123,7 +121,6 @@ void ClientGC::SendCompetitiveCooldown()
 
 void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
 {
-    // Просто отправляем актуальное состояние
     SendMatchmakingUpdate();
 }
 
@@ -159,7 +156,6 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
         return;
     }
 
-    // Original code continues...
     m_isSearching = true;
     SendMatchmakingUpdate();
 }
@@ -288,9 +284,9 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             OnOverwatchCaseUpdate(messageRead);
             break;
 
-        // --- НОВОЕ: ОБРАБОТКА КОНЦА МАТЧА ---
-        case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops:
-            OnMatchEndRunRewardDrops(messageRead);
+        // --- ИСПРАВЛЕННАЯ ОБРАБОТКА КОНЦА МАТЧА ---
+        case k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification:
+            OnMatchEnd(messageRead);
             break;
 
         default:
@@ -331,41 +327,41 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     }
 }
 
-// --- НОВАЯ ФУНКЦИЯ: ОБРАБОТКА КОНЦА МАТЧА И СОХРАНЕНИЕ ПРОГРЕССА ---
-void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
+// --- НОВАЯ ФУНКЦИЯ: ОБРАБОТКА КОНЦА МАТЧА ---
+void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
 {
-    CMsgGCCStrike15_v2_MatchEndRunRewardDrops message;
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification message;
     if (!messageRead.ReadProtobuf(message))
     {
-        Platform::Print("Failed to parse MatchEndRunRewardDrops\n");
+        Platform::Print("Failed to parse MatchEndRewardDropsNotification\n");
         return;
     }
 
-    // Парсим данные матча
     bool wonMatch = false;
     int matchType = 0;
 
-    if (message.has_match_end() && message.match_end().has_team())
+    // Проверяем, есть ли информация о результате
+    if (message.has_match_result())
     {
-        // Проверяем победу (обычно 1 = победа в CS:GO)
-        if (message.match_end().result() == 1)
+        // 1 = победа в CS:GO
+        if (message.match_result() == 1)
         {
             wonMatch = true;
         }
     }
 
     // Определяем тип матча (по умолчанию 0 = competitive)
-    if (message.has_match_end() && message.match_end().has_game_type())
+    if (message.has_game_type())
     {
-        matchType = message.match_end().game_type();
+        matchType = message.game_type();
     }
 
     Platform::Print("Match ended. Won: %d, Type: %d\n", wonMatch, matchType);
 
-    // Если матч был выигран и это Competitive (game_type == 0) или Wingman (game_type == 6)
+    // Если матч выигран и это Competitive или Wingman
     if (wonMatch && (matchType == 0 || matchType == 6))
     {
-        // Получаем текущие данные из конфига
+        // Получаем текущие данные
         int currentWins = GetConfig().CompetitiveWins();
         int currentRank = GetConfig().CompetitiveRank();
         int wingmanWins = GetConfig().WingmanWins();
@@ -373,17 +369,14 @@ void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
         int dzWins = GetConfig().DangerZoneWins();
         int dzRank = GetConfig().DangerZoneRank();
 
-        // Обновляем победы в зависимости от типа матча
         if (matchType == 0) // Competitive
         {
             currentWins++;
-            // Проверяем повышение ранга
             if (currentWins % WINS_PER_RANK == 0 && currentRank < 18)
             {
                 currentRank++;
                 Platform::Print("Rank UP! New Competitive Rank: %d\n", currentRank);
             }
-            // Сохраняем в файл
             UpdateConfigFile(currentRank, currentWins, wingmanRank, wingmanWins, dzRank, dzWins);
         }
         else if (matchType == 6) // Wingman
@@ -432,7 +425,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
 
     uint32_t defIndex = giftItem->def_index();
 
-    // Determine number of recipients (items to give)
     int numItems = 1;
     if (defIndex == 1210)
         numItems = 1;
@@ -445,7 +437,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         return;
     }
 
-    // Get the "set supply crate series" attribute value via Inventory's ItemSchema
     uint32_t series = 0;
     uint32_t attrDef = m_inventory.GetItemSchema().GetAttributeDefIndex("set supply crate series");
     if (attrDef)
@@ -473,7 +464,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         return;
     }
 
-    // Prepare updates
     CMsgSOMultipleObjects updateMultiple;
     CMsgSOSingleObject destroy;
     CMsgGCItemCustomizationNotification notification;
@@ -1606,4 +1596,9 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
     http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
 
     http->SendHTTPRequest(hRequest, nullptr);
+}
+
+uint32_t ClientGC::EffectiveAccountId() const
+{
+    return AccountId();
 }
