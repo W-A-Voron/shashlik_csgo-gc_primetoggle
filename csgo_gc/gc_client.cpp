@@ -16,7 +16,6 @@ ClientGC::ClientGC(uint64_t steamId)
     StartThread();
     FetchOverwatchCases();
     
-    // Load persisted progress from file
     LoadProgressFromConfig();
 
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
@@ -88,19 +87,18 @@ void ClientGC::SendMatchmakingSearchingUpdate()
         std::chrono::steady_clock::now() - m_matchmakingStartTime).count();
     stats->set_search_time_avg(static_cast<uint32_t>(elapsed));
 
-    // Статистика для разных типов игр
     auto* detail1 = stats->add_search_statistics();
-    detail1->set_game_type(6); // competitive
+    detail1->set_game_type(6);
     detail1->set_search_time_avg(static_cast<uint32_t>(elapsed));
     detail1->set_players_searching(500);
     
     auto* detail2 = stats->add_search_statistics();
-    detail2->set_game_type(7); // wingman
+    detail2->set_game_type(7);
     detail2->set_search_time_avg(static_cast<uint32_t>(elapsed));
     detail2->set_players_searching(200);
     
     auto* detail3 = stats->add_search_statistics();
-    detail3->set_game_type(10); // danger zone
+    detail3->set_game_type(10);
     detail3->set_search_time_avg(static_cast<uint32_t>(elapsed));
     detail3->set_players_searching(300);
 
@@ -109,7 +107,7 @@ void ClientGC::SendMatchmakingSearchingUpdate()
 
 void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
 {
-    // Клиент периодически пингует GC для проверки статуса
+    (void)messageRead; // Suppress unreferenced parameter warning
     if (m_isSearching) {
         SendMatchmakingSearchingUpdate();
     } else {
@@ -154,6 +152,7 @@ void ClientGC::SendMatchmakingUpdate()
 
 void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 {
+    (void)messageRead;
     uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
     if (cooldown > 0)
     {
@@ -177,6 +176,7 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 
 void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
 {
+    (void)messageRead;
     m_isSearching = false;
     m_matchmakingReservationSent = false;
     SendMatchmakingUpdate();
@@ -192,12 +192,6 @@ void ClientGC::SendMatchmakingReservation()
     reserve.set_reservationid(++m_matchmakingReservationId);
     reserve.set_map("de_dust2");
     reserve.set_server_address("192.168.0.14:27019");
-    
-    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *sub = reserve.mutable_reservation();
-    sub->set_account_id(EffectiveAccountId());
-    sub->set_reservationid(reserve.reservationid());
-    sub->set_map(reserve.map());
-    sub->set_server_address(reserve.server_address());
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
     m_matchmakingReservationSent = true;
@@ -214,7 +208,6 @@ void ClientGC::CheckMatchmakingTimeout()
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::steady_clock::now() - m_matchmakingStartTime).count();
     
-    // Если поиск идет больше 15 секунд, "находим" матч
     if (elapsed > 15) {
         Platform::Print("Matchmaking found match after %lld seconds\n", elapsed);
         SendMatchmakingReservation();
@@ -230,18 +223,15 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
         return;
     }
 
-    // Calculate XP gained (100-300 random XP per match)
     int xpGained = 100 + (std::rand() % 200);
     m_currentXp += xpGained;
 
-    // Check for level up (5000 XP per level)
     int xpPerLevel = 5000;
     while (m_currentXp >= xpPerLevel)
     {
         m_currentXp -= xpPerLevel;
         m_currentLevel++;
         
-        // Increase rank every 2 levels
         if (m_currentLevel % 2 == 0 && m_currentCompetitiveRank < RankGlobalElite)
         {
             m_currentCompetitiveRank = static_cast<RankId>(m_currentCompetitiveRank + 1);
