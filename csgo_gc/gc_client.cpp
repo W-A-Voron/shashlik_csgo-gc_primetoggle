@@ -3,61 +3,10 @@
 #include "graffiti.h"
 #include "keyvalue.h"
 #include <filesystem>
-#include <fstream>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
-#include "steam_hook.h"
-
-// --- НОВОВВЕДЕНИЯ ДЛЯ СОХРАНЕНИЯ ПРОГРЕССА ---
-#define CONFIG_PATH "csgo_gc/config.txt"
-#define WINS_PER_RANK 10  // Сколько побед нужно для повышения ранга
-
-// Функция для обновления config.txt в реальном времени
-static void UpdateConfigFile(int newRank, int newWins, int wingmanRank, int wingmanWins, int dzRank, int dzWins)
-{
-    // 1. Читаем текущий файл
-    std::string fileContent;
-    std::ifstream in(CONFIG_PATH);
-    if (in.is_open())
-    {
-        fileContent.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-        in.close();
-    }
-
-    // 2. Ищем и заменяем строки с рангами и победами
-    auto replaceLine = [&](const std::string& key, int value) {
-        std::string searchKey = "\"" + key + "\"";
-        size_t pos = fileContent.find(searchKey);
-        if (pos != std::string::npos)
-        {
-            size_t valueStart = fileContent.find('"', pos + searchKey.length()) + 1;
-            size_t valueEnd = fileContent.find('"', valueStart);
-            std::string newLine = "\"" + key + "\"\t\"" + std::to_string(value) + "\"";
-            
-            size_t lineStart = fileContent.rfind('\n', pos);
-            if (lineStart == std::string::npos) lineStart = 0;
-            size_t lineEnd = fileContent.find('\n', pos + searchKey.length());
-            if (lineEnd == std::string::npos) lineEnd = fileContent.length();
-            
-            fileContent.replace(lineStart, lineEnd - lineStart, newLine);
-        }
-    };
-
-    replaceLine("competitive_rank", newRank);
-    replaceLine("competitive_wins", newWins);
-    replaceLine("wingman_rank", wingmanRank);
-    replaceLine("wingman_wins", wingmanWins);
-    replaceLine("dangerzone_rank", dzRank);
-    replaceLine("dangerzone_wins", dzWins);
-
-    // 3. Записываем обратно
-    std::ofstream out(CONFIG_PATH);
-    if (out.is_open())
-    {
-        out << fileContent;
-        out.close();
-    }
-}
+#include "steam_hook.h"   // for RecreateClientGC()
+#include <fstream>
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
@@ -68,14 +17,114 @@ ClientGC::ClientGC(uint64_t steamId)
     StartThread();
     FetchOverwatchCases();
 
+    // Загружаем ранги из конфига при старте (НОВОЕ)
+    LoadRankDataFromConfig();
+
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
 }
 
 ClientGC::~ClientGC()
 {
     StopThread();
+    // Сохраняем ранги перед выходом (НОВОЕ)
+    SaveRankDataToConfig();
     Platform::Print("ClientGC destroyed\n");
 }
+
+// ---------------------------------------------------------
+// НОВАЯ ЛОГИКА СОХРАНЕНИЯ РАНГОВ
+// ---------------------------------------------------------
+
+void ClientGC::LoadRankDataFromConfig()
+{
+    GetConfig().ReloadFromFile();
+    
+    KeyValue config{ "config" };
+    if (!config.ParseFromFile("csgo_gc/config.txt"))
+    {
+        Platform::Print("Failed to load config for rank data! Using defaults.\n");
+        return;
+    }
+
+    const KeyValue *ranks = config.GetSubkey("ranks");
+    if (ranks)
+    {
+        m_competitiveRank = ranks->GetNumber("competitive_rank", 1);
+        m_competitiveWins = ranks->GetNumber("competitive_wins", 0);
+        m_wingmanRank = ranks->GetNumber("wingman_rank", 1);
+        m_wingmanWins = ranks->GetNumber("wingman_wins", 0);
+        m_dangerZoneRank = ranks->GetNumber("dangerzone_rank", 1);
+        m_dangerZoneWins = ranks->GetNumber("dangerzone_wins", 0);
+        Platform::Print("Loaded Ranks: Comp %u (%u wins)\n", m_competitiveRank, m_competitiveWins);
+    }
+}
+
+void ClientGC::SaveRankDataToConfig()
+{
+    KeyValue config{ "config" };
+    if (!config.ParseFromFile("csgo_gc/config.txt"))
+    {
+        Platform::Print("WARNING: Could not parse config.txt for saving! Creating new.\n");
+    }
+
+    KeyValue* ranks = config.GetSubkey("ranks");
+    if (!ranks) {
+        ranks = &config.AddSubkey("ranks");
+    }
+
+    ranks->AddNumber("competitive_rank", m_competitiveRank);
+    ranks->AddNumber("competitive_wins", m_competitiveWins);
+    ranks->AddNumber("wingman_rank", m_wingmanRank);
+    ranks->AddNumber("wingman_wins", m_wingmanWins);
+    ranks->AddNumber("dangerzone_rank", m_dangerZoneRank);
+    ranks->AddNumber("dangerzone_wins", m_dangerZoneWins);
+
+    config.WriteToFile("csgo_gc/config.txt");
+    Platform::Print("Saved new rank data to config.txt\n");
+}
+
+// ---------------------------------------------------------
+// ОБРАБОТЧИК КОНЦА МАТЧА (ГЛАВНОЕ ДОБАВЛЕНИЕ)
+// ---------------------------------------------------------
+
+void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchEndRunRewardDrops message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Failed to parse MatchEndRunRewardDrops\n");
+        return;
+    }
+
+    uint32_t winner = message.winner();
+    if (winner == 0) 
+    {
+        m_competitiveWins++;
+        Platform::Print("Match Won! Wins now: %u\n", m_competitiveWins);
+
+        const uint32_t WinsPerRank = 10;
+        uint32_t targetRank = 1 + (m_competitiveWins / WinsPerRank);
+        
+        if (targetRank > 18) targetRank = 18;
+
+        if (targetRank > m_competitiveRank)
+        {
+            m_competitiveRank = targetRank;
+            Platform::Print("RANK UP! New Rank: %u\n", m_competitiveRank);
+        }
+
+        SaveRankDataToConfig();
+        SendRankUpdate();
+    }
+    else
+    {
+        Platform::Print("Match lost... No rank changes.\n");
+    }
+}
+
+// ---------------------------------------------------------
+// ОРИГИНАЛЬНЫЕ ФУНКЦИИ (НЕ ТРОГАЕМ)
+// ---------------------------------------------------------
 
 void ClientGC::HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer)
 {
@@ -284,9 +333,9 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             OnOverwatchCaseUpdate(messageRead);
             break;
 
-        // --- ИСПРАВЛЕННАЯ ОБРАБОТКА КОНЦА МАТЧА ---
+        // ДОБАВЛЕНА ОБРАБОТКА КОНЦА МАТЧА
         case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops:
-            OnMatchEnd(messageRead);
+            OnMatchEndRunRewardDrops(messageRead);
             break;
 
         default:
@@ -324,77 +373,6 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
                 MessageName(messageRead.TypeUnmasked()));
             break;
         }
-    }
-}
-
-// --- НОВАЯ ФУНКЦИЯ: ОБРАБОТКА КОНЦА МАТЧА (РАБОТАЕТ СО СТАРЫМИ ПРОТОБУФАМИ) ---
-void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
-{
-    CMsgGCCStrike15_v2_MatchEndRunRewardDrops message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Failed to parse MatchEndRunRewardDrops\n");
-        return;
-    }
-
-    bool wonMatch = false;
-    int matchType = 0;
-
-    // Используем безопасные поля, которые есть в старых протобуфах
-    if (message.has_result())
-    {
-        // 1 = победа
-        if (message.result() == 1)
-        {
-            wonMatch = true;
-        }
-    }
-
-    // Определяем тип матча (по умолчанию 0 = competitive)
-    if (message.has_game_type())
-    {
-        matchType = message.game_type();
-    }
-
-    Platform::Print("Match ended. Won: %d, Type: %d\n", wonMatch, matchType);
-
-    // Если матч выигран и это Competitive (0) или Wingman (6)
-    if (wonMatch && (matchType == 0 || matchType == 6))
-    {
-        // Получаем текущие данные из конфига
-        int currentWins = GetConfig().CompetitiveWins();
-        int currentRank = GetConfig().CompetitiveRank();
-        int wingmanWins = GetConfig().WingmanWins();
-        int wingmanRank = GetConfig().WingmanRank();
-        int dzWins = GetConfig().DangerZoneWins();
-        int dzRank = GetConfig().DangerZoneRank();
-
-        // Обновляем победы в зависимости от типа матча
-        if (matchType == 0) // Competitive
-        {
-            currentWins++;
-            // Проверяем повышение ранга
-            if (currentWins % WINS_PER_RANK == 0 && currentRank < 18)
-            {
-                currentRank++;
-                Platform::Print("Rank UP! New Competitive Rank: %d\n", currentRank);
-            }
-            // Сохраняем в файл
-            UpdateConfigFile(currentRank, currentWins, wingmanRank, wingmanWins, dzRank, dzWins);
-        }
-        else if (matchType == 6) // Wingman
-        {
-            wingmanWins++;
-            if (wingmanWins % WINS_PER_RANK == 0 && wingmanRank < 18)
-            {
-                wingmanRank++;
-                Platform::Print("Rank UP! New Wingman Rank: %d\n", wingmanRank);
-            }
-            UpdateConfigFile(currentRank, currentWins, wingmanRank, wingmanWins, dzRank, dzWins);
-        }
-
-        // Отправляем обновление клиенту
-        SendRankUpdate();
     }
 }
 
@@ -510,7 +488,6 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 }
-
 
 void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 {
@@ -630,20 +607,20 @@ void ClientGC::SendRankUpdate()
 
     PlayerRankingInfo *rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().CompetitiveRank());
-    rank->set_wins(GetConfig().CompetitiveWins());
+    rank->set_rank_id(m_competitiveRank);
+    rank->set_wins(m_competitiveWins);
     rank->set_rank_type_id(RankTypeCompetitive);
 
     rank = message.add_rankings();
     rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().WingmanRank());
-    rank->set_wins(GetConfig().WingmanWins());
+    rank->set_rank_id(m_wingmanRank);
+    rank->set_wins(m_wingmanWins);
     rank->set_rank_type_id(RankTypeWingman);
 
     rank = message.add_rankings();
     rank->set_account_id(AccountId());
-    rank->set_rank_id(GetConfig().DangerZoneRank());
-    rank->set_wins(GetConfig().DangerZoneWins());
+    rank->set_rank_id(m_dangerZoneRank);
+    rank->set_wins(m_dangerZoneWins);
     rank->set_rank_type_id(RankTypeDangerZone);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
@@ -1336,7 +1313,6 @@ void ClientGC::SendInventoryUpdate()
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
 }
 
-
 void ClientGC::CheckFileReloads()
 {
     namespace fs = std::filesystem;
@@ -1372,6 +1348,11 @@ void ClientGC::CheckFileReloads()
             (this->*file.reloadFn)();
         }
     }
+    if (m_isSearching && !m_matchmakingReservationSent) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_matchmakingStartTime).count();
+        if (false) {}
+    }
     UpdateCooldown();
 }
 
@@ -1384,6 +1365,8 @@ void ClientGC::ReloadInventory()
 void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
+    // Перезагружаем ранги при обновлении конфига
+    LoadRankDataFromConfig();
     SendRankUpdate();
 }
 
@@ -1419,7 +1402,6 @@ void ClientGC::ReloadUnusualLootLists()
     }
     Platform::Print("ReloadUnusualLootLists: unusual loot lists reloaded\n");
 }
-
 
 void ClientGC::FetchOverwatchCases()
 {
