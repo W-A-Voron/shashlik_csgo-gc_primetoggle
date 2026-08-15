@@ -16,13 +16,16 @@ ClientGC::ClientGC(uint64_t steamId)
     StartThread();
     FetchOverwatchCases();
     
-    LoadProgressFromConfig();
-
+    // Load persisted progress from file
+    LoadProgressFromFile();
+    
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
 }
 
 ClientGC::~ClientGC()
 {
+    // Save progress before shutdown
+    SaveProgressToFile();
     StopThread();
     Platform::Print("ClientGC destroyed\n");
 }
@@ -69,50 +72,9 @@ void ClientGC::SendCompetitiveCooldown()
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
 }
 
-void ClientGC::SendMatchmakingSearchingUpdate()
-{
-    if (!m_isSearching) {
-        SendMatchmakingUpdate();
-        return;
-    }
-
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
-    update.set_matchmaking(1);
-
-    auto* stats = update.mutable_global_stats();
-    stats->set_players_searching(1000);
-    stats->set_servers_available(1000);
-    
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - m_matchmakingStartTime).count();
-    stats->set_search_time_avg(static_cast<uint32_t>(elapsed));
-
-    auto* detail1 = stats->add_search_statistics();
-    detail1->set_game_type(6);
-    detail1->set_search_time_avg(static_cast<uint32_t>(elapsed));
-    detail1->set_players_searching(500);
-    
-    auto* detail2 = stats->add_search_statistics();
-    detail2->set_game_type(7);
-    detail2->set_search_time_avg(static_cast<uint32_t>(elapsed));
-    detail2->set_players_searching(200);
-    
-    auto* detail3 = stats->add_search_statistics();
-    detail3->set_game_type(10);
-    detail3->set_search_time_avg(static_cast<uint32_t>(elapsed));
-    detail3->set_players_searching(300);
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
-}
-
 void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
 {
-    (void)messageRead; // Suppress unreferenced parameter warning
-    if (m_isSearching) {
-        SendMatchmakingSearchingUpdate();
-    } else {
-        SendMatchmakingUpdate();
-    }
+    SendMatchmakingUpdate();
 }
 
 void ClientGC::SendMatchmakingUpdate()
@@ -122,37 +84,18 @@ void ClientGC::SendMatchmakingUpdate()
 
     auto* stats = update.mutable_global_stats();
     stats->set_players_searching(1000);
-    stats->set_servers_available(1000);
-    
-    if (m_isSearching) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - m_matchmakingStartTime).count();
-        stats->set_search_time_avg(static_cast<uint32_t>(elapsed));
-    } else {
-        stats->set_search_time_avg(60);
-    }
+    stats->set_search_time_avg(60);
 
-    auto* detail1 = stats->add_search_statistics();
-    detail1->set_game_type(6);
-    detail1->set_search_time_avg(stats->search_time_avg());
-    detail1->set_players_searching(500);
-    
-    auto* detail2 = stats->add_search_statistics();
-    detail2->set_game_type(7);
-    detail2->set_search_time_avg(stats->search_time_avg());
-    detail2->set_players_searching(200);
-    
-    auto* detail3 = stats->add_search_statistics();
-    detail3->set_game_type(10);
-    detail3->set_search_time_avg(stats->search_time_avg());
-    detail3->set_players_searching(300);
+    auto* detail = stats->add_search_statistics();
+    detail->set_game_type(0);
+    detail->set_search_time_avg(60);
+    detail->set_players_searching(1000);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
 }
 
 void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 {
-    (void)messageRead;
     uint32_t cooldown = GetConfig().CompetitiveCooldownSeconds();
     if (cooldown > 0)
     {
@@ -169,18 +112,14 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
     m_isSearching = true;
     m_matchmakingStartTime = std::chrono::steady_clock::now();
     m_matchmakingReservationSent = false;
-    
-    SendMatchmakingSearchingUpdate();
-    Platform::Print("Matchmaking started\n");
+    SendMatchmakingUpdate();
 }
 
 void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
 {
-    (void)messageRead;
     m_isSearching = false;
     m_matchmakingReservationSent = false;
     SendMatchmakingUpdate();
-    Platform::Print("Matchmaking stopped\n");
 }
 
 void ClientGC::SendMatchmakingReservation()
@@ -192,111 +131,12 @@ void ClientGC::SendMatchmakingReservation()
     reserve.set_reservationid(++m_matchmakingReservationId);
     reserve.set_map("de_dust2");
     reserve.set_server_address("192.168.0.14:27019");
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *sub = reserve.mutable_reservation();
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
     m_matchmakingReservationSent = true;
-    m_isSearching = false;
 
     Platform::Print("Sent matchmaking reservation to %s:%d\n", "192.168.0.14", 27019);
-}
-
-void ClientGC::CheckMatchmakingTimeout()
-{
-    if (!m_isSearching || m_matchmakingReservationSent)
-        return;
-    
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - m_matchmakingStartTime).count();
-    
-    if (elapsed > 15) {
-        Platform::Print("Matchmaking found match after %lld seconds\n", elapsed);
-        SendMatchmakingReservation();
-    }
-}
-
-void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
-{
-    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification message;
-    if (!messageRead.ReadProtobuf(message))
-    {
-        Platform::Print("Parsing MatchEndRewardDropsNotification failed\n");
-        return;
-    }
-
-    int xpGained = 100 + (std::rand() % 200);
-    m_currentXp += xpGained;
-
-    int xpPerLevel = 5000;
-    while (m_currentXp >= xpPerLevel)
-    {
-        m_currentXp -= xpPerLevel;
-        m_currentLevel++;
-        
-        if (m_currentLevel % 2 == 0 && m_currentCompetitiveRank < RankGlobalElite)
-        {
-            m_currentCompetitiveRank = static_cast<RankId>(m_currentCompetitiveRank + 1);
-        }
-    }
-
-    m_currentCompetitiveWins++;
-
-    Platform::Print("Match ended! +%d XP, Level: %d, XP: %d, Rank: %d, Wins: %d\n",
-                    xpGained, m_currentLevel, m_currentXp, m_currentCompetitiveRank, m_currentCompetitiveWins);
-
-    SaveProgressToConfig();
-    SendRankUpdate();
-
-    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
-    BuildMatchmakingHello(mmHello);
-    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
-}
-
-void ClientGC::LoadProgressFromConfig()
-{
-    KeyValue progress{ "progress" };
-    if (!progress.ParseFromFile("csgo_gc/progress.txt"))
-    {
-        m_currentXp = GetConfig().Xp();
-        m_currentLevel = GetConfig().Level();
-        m_currentCompetitiveRank = GetConfig().CompetitiveRank();
-        m_currentCompetitiveWins = GetConfig().CompetitiveWins();
-        m_currentWingmanRank = GetConfig().WingmanRank();
-        m_currentWingmanWins = GetConfig().WingmanWins();
-        m_currentDangerZoneRank = GetConfig().DangerZoneRank();
-        m_currentDangerZoneWins = GetConfig().DangerZoneWins();
-        
-        SaveProgressToConfig();
-        return;
-    }
-
-    m_currentXp = progress.GetNumber<int>("xp", GetConfig().Xp());
-    m_currentLevel = progress.GetNumber<int>("level", GetConfig().Level());
-    m_currentCompetitiveRank = static_cast<RankId>(progress.GetNumber<int>("competitive_rank", GetConfig().CompetitiveRank()));
-    m_currentCompetitiveWins = progress.GetNumber<int>("competitive_wins", GetConfig().CompetitiveWins());
-    m_currentWingmanRank = static_cast<RankId>(progress.GetNumber<int>("wingman_rank", GetConfig().WingmanRank()));
-    m_currentWingmanWins = progress.GetNumber<int>("wingman_wins", GetConfig().WingmanWins());
-    m_currentDangerZoneRank = static_cast<DangerZoneRankId>(progress.GetNumber<int>("dangerzone_rank", GetConfig().DangerZoneRank()));
-    m_currentDangerZoneWins = progress.GetNumber<int>("dangerzone_wins", GetConfig().DangerZoneWins());
-
-    Platform::Print("Progress loaded: Level %d, XP %d, Rank %d, Wins %d\n",
-                    m_currentLevel, m_currentXp, m_currentCompetitiveRank, m_currentCompetitiveWins);
-}
-
-void ClientGC::SaveProgressToConfig()
-{
-    KeyValue progress{ "progress" };
-    progress.AddNumber("xp", m_currentXp);
-    progress.AddNumber("level", m_currentLevel);
-    progress.AddNumber("competitive_rank", static_cast<int>(m_currentCompetitiveRank));
-    progress.AddNumber("competitive_wins", m_currentCompetitiveWins);
-    progress.AddNumber("wingman_rank", static_cast<int>(m_currentWingmanRank));
-    progress.AddNumber("wingman_wins", m_currentWingmanWins);
-    progress.AddNumber("dangerzone_rank", static_cast<int>(m_currentDangerZoneRank));
-    progress.AddNumber("dangerzone_wins", m_currentDangerZoneWins);
-    progress.WriteToFile("csgo_gc/progress.txt");
-
-    Platform::Print("Progress saved: Level %d, XP %d, Rank %d, Wins %d\n",
-                    m_currentLevel, m_currentXp, m_currentCompetitiveRank, m_currentCompetitiveWins);
 }
 
 void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
@@ -649,6 +489,7 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
     message.mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
     
+    // Use current progress values
     message.set_player_level(m_currentLevel);
     message.set_player_cur_xp(m_currentXp);
 }
@@ -1224,6 +1065,34 @@ void ClientGC::StatTrakSwap(GCMessageRead &messageRead)
     }
 }
 
+void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing MatchEndRewardDropsNotification failed, ignoring\n");
+        return;
+    }
+
+    // Calculate XP gained (100-300 XP per match)
+    int xpGained = 100 + (std::rand() % 200);
+    
+    // Update XP and rank
+    UpdateRankAndXP(xpGained);
+    
+    // Increment wins
+    m_currentCompetitiveWins++;
+    
+    Platform::Print("Match ended! +%d XP, Level: %d, Rank: %d, Wins: %d\n",
+                    xpGained, m_currentLevel, m_currentCompetitiveRank, m_currentCompetitiveWins);
+    
+    // Save progress to file
+    SaveProgressToFile();
+    
+    // Send updated rank to client
+    SendRankUpdate();
+}
+
 void ClientGC::DeleteItem(GCMessageRead &messageRead)
 {
     uint64_t itemId = messageRead.ReadUint64();
@@ -1370,6 +1239,75 @@ void ClientGC::SendInventoryUpdate()
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
 }
 
+void ClientGC::LoadProgressFromFile()
+{
+    KeyValue progress{ "progress" };
+    if (!progress.ParseFromFile("csgo_gc/progress.txt"))
+    {
+        // If progress file doesn't exist, use values from config
+        m_currentXp = GetConfig().Xp();
+        m_currentLevel = GetConfig().Level();
+        m_currentCompetitiveRank = GetConfig().CompetitiveRank();
+        m_currentCompetitiveWins = GetConfig().CompetitiveWins();
+        m_currentWingmanRank = GetConfig().WingmanRank();
+        m_currentWingmanWins = GetConfig().WingmanWins();
+        m_currentDangerZoneRank = GetConfig().DangerZoneRank();
+        m_currentDangerZoneWins = GetConfig().DangerZoneWins();
+        Platform::Print("No progress file found, using default values from config\n");
+        return;
+    }
+
+    m_currentXp = progress.GetNumber<int>("xp", GetConfig().Xp());
+    m_currentLevel = progress.GetNumber<int>("level", GetConfig().Level());
+    m_currentCompetitiveRank = static_cast<RankId>(progress.GetNumber<int>("competitive_rank", GetConfig().CompetitiveRank()));
+    m_currentCompetitiveWins = progress.GetNumber<int>("competitive_wins", GetConfig().CompetitiveWins());
+    m_currentWingmanRank = static_cast<RankId>(progress.GetNumber<int>("wingman_rank", GetConfig().WingmanRank()));
+    m_currentWingmanWins = progress.GetNumber<int>("wingman_wins", GetConfig().WingmanWins());
+    m_currentDangerZoneRank = static_cast<DangerZoneRankId>(progress.GetNumber<int>("dangerzone_rank", GetConfig().DangerZoneRank()));
+    m_currentDangerZoneWins = progress.GetNumber<int>("dangerzone_wins", GetConfig().DangerZoneWins());
+
+    Platform::Print("Progress loaded: Level %d, XP %d, Rank %d, Wins %d\n",
+                    m_currentLevel, m_currentXp, m_currentCompetitiveRank, m_currentCompetitiveWins);
+}
+
+void ClientGC::SaveProgressToFile()
+{
+    KeyValue progress{ "progress" };
+    progress.AddNumber("xp", m_currentXp);
+    progress.AddNumber("level", m_currentLevel);
+    progress.AddNumber("competitive_rank", m_currentCompetitiveRank);
+    progress.AddNumber("competitive_wins", m_currentCompetitiveWins);
+    progress.AddNumber("wingman_rank", m_currentWingmanRank);
+    progress.AddNumber("wingman_wins", m_currentWingmanWins);
+    progress.AddNumber("dangerzone_rank", m_currentDangerZoneRank);
+    progress.AddNumber("dangerzone_wins", m_currentDangerZoneWins);
+    progress.WriteToFile("csgo_gc/progress.txt");
+
+    Platform::Print("Progress saved: Level %d, XP %d, Rank %d, Wins %d\n",
+                    m_currentLevel, m_currentXp, m_currentCompetitiveRank, m_currentCompetitiveWins);
+}
+
+void ClientGC::UpdateRankAndXP(int xpGained)
+{
+    m_currentXp += xpGained;
+
+    // XP per level (5000 XP per level)
+    const int XP_PER_LEVEL = 5000;
+    
+    // Check for level up
+    while (m_currentXp >= XP_PER_LEVEL)
+    {
+        m_currentXp -= XP_PER_LEVEL;
+        m_currentLevel++;
+        
+        // Every 2 levels, increase rank
+        if (m_currentLevel % 2 == 0 && m_currentCompetitiveRank < RankGlobalElite)
+        {
+            m_currentCompetitiveRank = static_cast<RankId>(m_currentCompetitiveRank + 1);
+        }
+    }
+}
+
 void ClientGC::CheckFileReloads()
 {
     namespace fs = std::filesystem;
@@ -1385,13 +1323,15 @@ void ClientGC::CheckFileReloads()
     static fs::file_time_type lastPriceSheetWrite = fs::file_time_type::min();
     static fs::file_time_type lastPassesWrite = fs::file_time_type::min();
     static fs::file_time_type lastUnusualLootWrite = fs::file_time_type::min();
+    static fs::file_time_type lastProgressWrite = fs::file_time_type::min();
 
     WatchedFile files[] = {
-        { "csgo_gc/inventory.txt",         lastInventoryWrite,   &ClientGC::ReloadInventory      },
-        { "csgo_gc/config.txt",            lastConfigWrite,      &ClientGC::ReloadConfig         },
-        { "csgo_gc/price_sheet.txt",       lastPriceSheetWrite,  &ClientGC::ReloadPriceSheet     },
-        { "csgo_gc/passes.txt",            lastPassesWrite,      &ClientGC::ReloadPasses         },
-        { "csgo_gc/unusual_loot_lists.txt",lastUnusualLootWrite, &ClientGC::ReloadUnusualLootLists }
+        { "csgo_gc/inventory.txt",          lastInventoryWrite,   &ClientGC::ReloadInventory      },
+        { "csgo_gc/config.txt",             lastConfigWrite,      &ClientGC::ReloadConfig         },
+        { "csgo_gc/price_sheet.txt",        lastPriceSheetWrite,  &ClientGC::ReloadPriceSheet     },
+        { "csgo_gc/passes.txt",             lastPassesWrite,      &ClientGC::ReloadPasses         },
+        { "csgo_gc/unusual_loot_lists.txt", lastUnusualLootWrite, &ClientGC::ReloadUnusualLootLists },
+        { "csgo_gc/progress.txt",           lastProgressWrite,    &ClientGC::LoadProgressFromFile }
     };
 
     for (auto& file : files) {
@@ -1406,13 +1346,13 @@ void ClientGC::CheckFileReloads()
         }
     }
 
-    static auto lastMatchmakingCheck = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastMatchmakingCheck).count() >= 5) {
-        lastMatchmakingCheck = now;
-        CheckMatchmakingTimeout();
+    if (m_isSearching && !m_matchmakingReservationSent) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_matchmakingStartTime).count();
+        if (elapsed >= 8 && elapsed < 10) {
+            SendMatchmakingReservation();
+        }
     }
-    
     UpdateCooldown();
 }
 
@@ -1425,7 +1365,7 @@ void ClientGC::ReloadInventory()
 void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
-    LoadProgressFromConfig();
+    LoadProgressFromFile();
     SendRankUpdate();
 }
 
@@ -1501,6 +1441,7 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
     Platform::Print("Overwatch: received JSON: %s\n", json.c_str());
 
     std::vector<uint32_t> suspects;
+    size_t pos = 0;
     size_t start = json.find('{');
     if (start == std::string::npos) return;
     size_t end = json.rfind('}');
