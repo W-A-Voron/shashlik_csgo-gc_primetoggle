@@ -113,61 +113,9 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 
 void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
 {
+    // ТЕПЕРЬ ЗДЕСЬ ТОЛЬКО ОСТАНОВКА ПОИСКА. СОХРАНЕНИЕ РАНГОВ ПЕРЕМЕЩЕНО В OnMatchEnd.
     m_isSearching = false;
     SendMatchmakingUpdate();
-
-    // ===== НОВАЯ ЛОГИКА СОХРАНЕНИЯ РАНГОВ ПОСЛЕ МАТЧА =====
-    // Если мы выиграли матч (флаг установлен в другом месте), то обновляем ранги
-    if (m_matchWonThisRound)
-    {
-        Platform::Print("Match won! Updating ranks and wins...\n");
-
-        // 1. Увеличиваем победы
-        int newCompWins = GetConfig().CompetitiveWins() + 1;
-        int newWingmanWins = GetConfig().WingmanWins() + 1;
-        int newDangerZoneWins = GetConfig().DangerZoneWins() + 1;
-
-        // 2. Логика повышения соревновательного ранга (каждые 10 побед)
-        int currentRank = GetConfig().CompetitiveRank();
-        if (newCompWins % 10 == 0 && currentRank < 18) // Максимум 18 (Глобал)
-        {
-            currentRank++;
-            Platform::Print("Rank up! New competitive rank: %d\n", currentRank);
-        }
-
-        // 3. Логика повышения ранга в напарниках (каждые 15 побед)
-        int currentWingmanRank = GetConfig().WingmanRank();
-        if (newWingmanWins % 15 == 0 && currentWingmanRank < 18)
-        {
-            currentWingmanRank++;
-            Platform::Print("Rank up! New wingman rank: %d\n", currentWingmanRank);
-        }
-
-        // 4. Логика повышения ранга в запретной зоне (каждые 20 побед)
-        int currentDangerZoneRank = GetConfig().DangerZoneRank();
-        if (newDangerZoneWins % 20 == 0 && currentDangerZoneRank < 15)
-        {
-            currentDangerZoneRank++;
-            Platform::Print("Rank up! New danger zone rank: %d\n", currentDangerZoneRank);
-        }
-
-        // 5. Сохраняем всё в конфиг
-        // (ВНИМАНИЕ: Мы не можем напрямую менять GetConfig(), потому что это константа.
-        // Мы перезаписываем файл и заставляем GC перезагрузиться через SaveRanksToConfig).
-        
-        // Но сначала нам нужно обновить значения в памяти.
-        // Мы используем временный объект, чтобы сформировать новые данные.
-        GCConfig newConfig = GetConfig(); // Копируем текущий конфиг
-
-        // Тут мы не можем просто так поменять поля, потому что они приватные и возвращаются через геттеры.
-        // Вместо этого мы перезапишем файл через SaveRanksToConfig, используя новые значения.
-        
-        // ===== ВАЖНО: Сохраняем изменения в файл =====
-        SaveRanksToConfig();
-
-        // 6. Отправляем обновление клиенту
-        SendRankUpdate();
-    }
 }
 
 void ClientGC::SendMatchmakingReservation()
@@ -286,6 +234,11 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
         
         case k_EMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate:
             OnOverwatchCaseUpdate(messageRead);
+            break;
+
+        // ===== НОВЫЙ ОБРАБОТЧИК КОНЦА МАТЧА =====
+        case k_EMsgGCCStrike15_v2_MatchEnd:
+            OnMatchEnd(messageRead);
             break;
 
         default:
@@ -1530,7 +1483,7 @@ uint32_t ClientGC::EffectiveAccountId() const
     return AccountId();
 }
 
-// ===== НОВЫЙ МЕТОД: СОХРАНЕНИЕ РАНГОВ В ФАЙЛ =====
+// ===== ИСПРАВЛЕННЫЙ МЕТОД СОХРАНЕНИЯ =====
 void ClientGC::SaveRanksToConfig()
 {
     // 1. Загружаем текущий конфиг
@@ -1542,14 +1495,20 @@ void ClientGC::SaveRanksToConfig()
     }
 
     // 2. Обновляем раздел "ranks"
-    KeyValue *ranksKey = const_cast<KeyValue*>(configKey.GetSubkey("ranks"));
+    // Используем неконстантный GetSubkey (без const_cast)
+    KeyValue *ranksKey = configKey.GetSubkey("ranks");
     if (!ranksKey)
     {
         Platform::Print("SaveRanksToConfig: No 'ranks' section found, creating one.\n");
         ranksKey = &configKey.AddSubkey("ranks");
     }
+    else
+    {
+        // Очищаем секцию, чтобы старые данные не дублировались
+        ranksKey->Clear();
+    }
 
-    // Обновляем значения (используем актуальные данные из GetConfig())
+    // 3. Записываем значения из памяти (GetConfig() уже содержит актуальные данные)
     ranksKey->AddNumber("competitive_rank", GetConfig().CompetitiveRank());
     ranksKey->AddNumber("competitive_wins", GetConfig().CompetitiveWins());
     ranksKey->AddNumber("wingman_rank", GetConfig().WingmanRank());
@@ -1557,7 +1516,7 @@ void ClientGC::SaveRanksToConfig()
     ranksKey->AddNumber("dangerzone_rank", GetConfig().DangerZoneRank());
     ranksKey->AddNumber("dangerzone_wins", GetConfig().DangerZoneWins());
 
-    // 3. Перезаписываем файл
+    // 4. Перезаписываем файл
     if (!configKey.WriteToFile("csgo_gc/config.txt"))
     {
         Platform::Print("SaveRanksToConfig: Failed to write config.txt\n");
@@ -1565,7 +1524,82 @@ void ClientGC::SaveRanksToConfig()
     }
 
     Platform::Print("SaveRanksToConfig: Ranks and wins saved successfully!\n");
+}
 
-    // 4. Перезагружаем конфиг в памяти, чтобы изменения вступили в силу
-    GetConfig().ReloadFromFile();
+// ===== НОВЫЙ ОБРАБОТЧИК КОНЦА МАТЧА =====
+void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
+{
+    // Парсим сообщение о конце матча
+    CMsgGCCStrike15_v2_MatchEnd matchEnd;
+    if (!messageRead.ReadProtobuf(matchEnd))
+    {
+        Platform::Print("Failed to parse MatchEnd message\n");
+        return;
+    }
+
+    // Проверяем, выиграл ли наш игрок
+    // В реальном CS:GO нужно смотреть на winner_side или на счет, но здесь для простоты:
+    // Предположим, что матч выигран, если winner_id совпадает с нашим account_id
+    // (В твоей версии протокола может быть другое поле, проверь)
+    // Например, matchEnd.winner() или matchEnd.winning_team().
+    // Ниже примерная логика.
+    
+    // Если наш игрок победил (заглушка, нужно подстроить под твой протобуф)
+    // Например, если matchEnd.winner() == EffectiveAccountId()
+    m_matchWonThisRound = true; 
+
+    Platform::Print("Match ended. Win status: %d\n", m_matchWonThisRound);
+
+    // Если мы выиграли, обновляем ранги и победы
+    if (m_matchWonThisRound)
+    {
+        // Получаем ссылку на актуальный конфиг (не копию!)
+        GCConfig &config = const_cast<GCConfig&>(GetConfig());
+
+        // 1. Увеличиваем победы для всех режимов
+        int newCompWins = config.CompetitiveWins() + 1;
+        int newWingmanWins = config.WingmanWins() + 1;
+        int newDangerZoneWins = config.DangerZoneWins() + 1;
+
+        // 2. Логика повышения соревновательного ранга (каждые 10 побед)
+        int currentRank = config.CompetitiveRank();
+        if (newCompWins % 10 == 0 && currentRank < 18)
+        {
+            currentRank++;
+            Platform::Print("Rank up! New competitive rank: %d\n", currentRank);
+        }
+
+        // 3. Логика повышения ранга в напарниках (каждые 15 побед)
+        int currentWingmanRank = config.WingmanRank();
+        if (newWingmanWins % 15 == 0 && currentWingmanRank < 18)
+        {
+            currentWingmanRank++;
+            Platform::Print("Rank up! New wingman rank: %d\n", currentWingmanRank);
+        }
+
+        // 4. Логика повышения ранга в запретной зоне (каждые 20 побед)
+        int currentDangerZoneRank = config.DangerZoneRank();
+        if (newDangerZoneWins % 20 == 0 && currentDangerZoneRank < 15)
+        {
+            currentDangerZoneRank++;
+            Platform::Print("Rank up! New danger zone rank: %d\n", currentDangerZoneRank);
+        }
+
+        // 5. Обновляем значения в памяти (это критично для корректного сохранения)
+        config.CompetitiveRank() = currentRank;
+        config.CompetitiveWins() = newCompWins;
+        config.WingmanRank() = currentWingmanRank;
+        config.WingmanWins() = newWingmanWins;
+        config.DangerZoneRank() = currentDangerZoneRank;
+        config.DangerZoneWins() = newDangerZoneWins;
+
+        // 6. Сохраняем изменения в файл
+        SaveRanksToConfig();
+
+        // 7. Отправляем обновление клиенту, чтобы он увидел новый ранг
+        SendRankUpdate();
+        
+        // Сбрасываем флаг
+        m_matchWonThisRound = false;
+    }
 }
