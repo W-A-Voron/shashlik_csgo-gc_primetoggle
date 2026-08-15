@@ -510,6 +510,9 @@ static void QueueUserStatsCallback()
     s_userStatsReceivedCallbacks.push_back(callback);
 }
 
+// ============================================================
+// ПОЛНЫЙ ПЕРЕХВАТ СТАТИСТИКИ (ХАРДКОД)
+// ============================================================
 class SteamUserStatsProxy : public ISteamUserStats
 {
     ISteamUserStats *const m_original;
@@ -520,6 +523,7 @@ public:
     {
     }
 
+    // 1. Перехват запроса общей статистики (CS:GO 360)
     bool RequestCurrentStats() override
     {
         if (!AppId::IsOriginal())
@@ -532,252 +536,113 @@ public:
         return m_original->RequestCurrentStats();
     }
 
+    // 2. ХАРДКОД ВСЕХ ПОКАЗАТЕЛЕЙ (Здесь сидят реалистичные цифры)
     bool GetStat(const char *pchName, int32 *pData) override
     {
+        // --- ОБЩАЯ СТАТИСТИКА (CS:GO 360) ---
+        if (strcmp(pchName, "total_games_played") == 0) { *pData = 412; return true; }
+        if (strcmp(pchName, "total_wins") == 0) { *pData = 286; return true; }
+        if (strcmp(pchName, "total_losses") == 0) { *pData = 84; return true; }
+        if (strcmp(pchName, "total_ties") == 0) { *pData = 42; return true; }
+        if (strcmp(pchName, "total_kills") == 0) { *pData = 6847; return true; }
+        if (strcmp(pchName, "total_deaths") == 0) { *pData = 5249; return true; }
+        if (strcmp(pchName, "total_assists") == 0) { *pData = 1890; return true; }
+        if (strcmp(pchName, "total_mvps") == 0) { *pData = 342; return true; }
+        if (strcmp(pchName, "total_damage_done") == 0) { *pData = 845000; return true; }
+        if (strcmp(pchName, "total_time_played") == 0) { *pData = 41280; return true; } // в минутах
+        
+        // --- ЛУЧШЕЕ ОРУЖИЕ (AK-47, M4A4, AWP) ---
+        if (strcmp(pchName, "weapon_kills_ak47") == 0) { *pData = 394; return true; }
+        if (strcmp(pchName, "weapon_kills_m4a4") == 0) { *pData = 282; return true; }
+        if (strcmp(pchName, "weapon_kills_awp") == 0) { *pData = 147; return true; }
+        if (strcmp(pchName, "weapon_shots_ak47") == 0) { *pData = 4560; return true; }
+        if (strcmp(pchName, "weapon_shots_m4a4") == 0) { *pData = 4320; return true; }
+        if (strcmp(pchName, "weapon_shots_awp") == 0) { *pData = 490; return true; }
+        if (strcmp(pchName, "weapon_hits_ak47") == 0) { *pData = 2140; return true; }
+        if (strcmp(pchName, "weapon_hits_m4a4") == 0) { *pData = 1980; return true; }
+        if (strcmp(pchName, "weapon_hits_awp") == 0) { *pData = 320; return true; }
+
+        // --- ЛУЧШИЕ КАРТЫ ---
+        if (strcmp(pchName, "map_wins_mirage") == 0) { *pData = 94; return true; }
+        if (strcmp(pchName, "map_losses_mirage") == 0) { *pData = 62; return true; }
+        if (strcmp(pchName, "map_wins_dust2") == 0) { *pData = 86; return true; }
+        if (strcmp(pchName, "map_losses_dust2") == 0) { *pData = 56; return true; }
+        if (strcmp(pchName, "map_wins_inferno") == 0) { *pData = 72; return true; }
+        if (strcmp(pchName, "map_losses_inferno") == 0) { *pData = 48; return true; }
+
+        // --- СТАТИСТИКА ГРАНАТ ---
+        if (strcmp(pchName, "hegrenade_damage_total") == 0) { *pData = 34200; return true; }
+        if (strcmp(pchName, "hegrenade_kills") == 0) { *pData = 42; return true; }
+        if (strcmp(pchName, "flashbang_players_flashed") == 0) { *pData = 390; return true; }
+
+        // --- ПРОЧИЕ ПОКАЗАТЕЛИ (КД, хедшоты и т.д.) ---
+        if (strcmp(pchName, "total_headshots") == 0) { *pData = 1300; return true; }
+        if (strcmp(pchName, "total_rounds_played") == 0) { *pData = 8920; return true; }
+        if (strcmp(pchName, "rounds_won") == 0) { *pData = 5120; return true; }
+        if (strcmp(pchName, "rounds_lost") == 0) { *pData = 3800; return true; }
+
+        // Если запрашивают что-то другое — передаём оригиналу
         return m_original->GetStat(pchName, pData);
     }
 
     bool GetStat(const char *pchName, float *pData) override
     {
+        // --- СРЕДНИЕ ПОКАЗАТЕЛИ ---
+        if (strcmp(pchName, "avg_kills_per_round") == 0) { *pData = 0.77f; return true; }
+        if (strcmp(pchName, "avg_deaths_per_round") == 0) { *pData = 0.59f; return true; }
+        if (strcmp(pchName, "avg_assists_per_round") == 0) { *pData = 0.21f; return true; }
+        if (strcmp(pchName, "kd_ratio") == 0) { *pData = 1.30f; return true; }
+        if (strcmp(pchName, "hs_percentage") == 0) { *pData = 19.0f; return true; }
+        if (strcmp(pchName, "rating") == 0) { *pData = 1.12f; return true; }
+
+        // Если запрашивают что-то другое — передаём оригиналу
         return m_original->GetStat(pchName, pData);
     }
 
-    bool SetStat(const char *pchName, int32 nData) override
-    {
-        return m_original->SetStat(pchName, nData);
-    }
-
-    bool SetStat(const char *pchName, float fData) override
-    {
-        return m_original->SetStat(pchName, fData);
-    }
-
-    bool UpdateAvgRateStat(const char *pchName, float flCountThisSession, double dSessionLength) override
-    {
-        return m_original->UpdateAvgRateStat(pchName, flCountThisSession, dSessionLength);
-    }
-
-    bool GetAchievement(const char *pchName, bool *pbAchieved) override
-    {
-        return m_original->GetAchievement(pchName, pbAchieved);
-    }
-
-    bool SetAchievement(const char *pchName) override
-    {
-        return m_original->SetAchievement(pchName);
-    }
-
-    bool ClearAchievement(const char *pchName) override
-    {
-        return m_original->ClearAchievement(pchName);
-    }
-
-    bool GetAchievementAndUnlockTime(const char *pchName, bool *pbAchieved, uint32 *punUnlockTime) override
-    {
-        return m_original->GetAchievementAndUnlockTime(pchName, pbAchieved, punUnlockTime);
-    }
-
-    bool StoreStats() override
-    {
-        return m_original->StoreStats();
-    }
-
-    int GetAchievementIcon(const char *pchName) override
-    {
-        return m_original->GetAchievementIcon(pchName);
-    }
-
-    const char *GetAchievementDisplayAttribute(const char *pchName, const char *pchKey) override
-    {
-        return m_original->GetAchievementDisplayAttribute(pchName, pchKey);
-    }
-
-    bool IndicateAchievementProgress(const char *pchName, uint32 nCurProgress, uint32 nMaxProgress) override
-    {
-        return m_original->IndicateAchievementProgress(pchName, nCurProgress, nMaxProgress);
-    }
-
-    uint32 GetNumAchievements() override
-    {
-        return m_original->GetNumAchievements();
-    }
-
-    const char *GetAchievementName(uint32 iAchievement) override
-    {
-        return m_original->GetAchievementName(iAchievement);
-    }
-
-    SteamAPICall_t RequestUserStats(CSteamID steamIDUser) override
-    {
-        if (!AppId::IsOriginal())
-        {
-            // not used by csgo, but warn anyway
-            Platform::Print("RequestUserStats not spoofed!!!\n");
-        }
-
-        return m_original->RequestUserStats(steamIDUser);
-    }
-
-    bool GetUserStat(CSteamID steamIDUser, const char *pchName, int32 *pData) override
-    {
-        return m_original->GetUserStat(steamIDUser, pchName, pData);
-    }
-
-    bool GetUserStat(CSteamID steamIDUser, const char *pchName, float *pData) override
-    {
-        return m_original->GetUserStat(steamIDUser, pchName, pData);
-    }
-
-    bool GetUserAchievement(CSteamID steamIDUser, const char *pchName, bool *pbAchieved) override
-    {
-        return m_original->GetUserAchievement(steamIDUser, pchName, pbAchieved);
-    }
-
-    bool GetUserAchievementAndUnlockTime(CSteamID steamIDUser, const char *pchName, bool *pbAchieved, uint32 *punUnlockTime) override
-    {
-        return m_original->GetUserAchievementAndUnlockTime(steamIDUser, pchName, pbAchieved, punUnlockTime);
-    }
-
-    bool ResetAllStats(bool bAchievementsToo) override
-    {
-        return m_original->ResetAllStats(bAchievementsToo);
-    }
-
-    SteamAPICall_t FindOrCreateLeaderboard(const char *pchLeaderboardName,
-        ELeaderboardSortMethod eLeaderboardSortMethod,
-        ELeaderboardDisplayType eLeaderboardDisplayType) override
-    {
-        return m_original->FindOrCreateLeaderboard(pchLeaderboardName, eLeaderboardSortMethod, eLeaderboardDisplayType);
-    }
-
-    SteamAPICall_t FindLeaderboard(const char *pchLeaderboardName) override
-    {
-        return m_original->FindLeaderboard(pchLeaderboardName);
-    }
-
-    const char *GetLeaderboardName(SteamLeaderboard_t hSteamLeaderboard) override
-    {
-        return m_original->GetLeaderboardName(hSteamLeaderboard);
-    }
-
-    int GetLeaderboardEntryCount(SteamLeaderboard_t hSteamLeaderboard) override
-    {
-        return m_original->GetLeaderboardEntryCount(hSteamLeaderboard);
-    }
-
-    ELeaderboardSortMethod GetLeaderboardSortMethod(SteamLeaderboard_t hSteamLeaderboard) override
-    {
-        return m_original->GetLeaderboardSortMethod(hSteamLeaderboard);
-    }
-
-    ELeaderboardDisplayType GetLeaderboardDisplayType(SteamLeaderboard_t hSteamLeaderboard) override
-    {
-        return m_original->GetLeaderboardDisplayType(hSteamLeaderboard);
-    }
-
-    SteamAPICall_t DownloadLeaderboardEntries(SteamLeaderboard_t hSteamLeaderboard,
-        ELeaderboardDataRequest eLeaderboardDataRequest,
-        int nRangeStart,
-        int nRangeEnd) override
-    {
-        return m_original->DownloadLeaderboardEntries(hSteamLeaderboard, eLeaderboardDataRequest, nRangeStart, nRangeEnd);
-    }
-
-    SteamAPICall_t DownloadLeaderboardEntriesForUsers(SteamLeaderboard_t hSteamLeaderboard, CSteamID *prgUsers, int cUsers) override
-    {
-        return m_original->DownloadLeaderboardEntriesForUsers(hSteamLeaderboard, prgUsers, cUsers);
-    }
-
-    bool GetDownloadedLeaderboardEntry(SteamLeaderboardEntries_t hSteamLeaderboardEntries,
-        int index,
-        LeaderboardEntry_t *pLeaderboardEntry,
-        int32 *pDetails,
-        int cDetailsMax) override
-    {
-        return m_original->GetDownloadedLeaderboardEntry(hSteamLeaderboardEntries, index, pLeaderboardEntry, pDetails, cDetailsMax);
-    }
-
-    SteamAPICall_t UploadLeaderboardScore(SteamLeaderboard_t hSteamLeaderboard,
-        ELeaderboardUploadScoreMethod eLeaderboardUploadScoreMethod,
-        int32 nScore,
-        const int32 *pScoreDetails,
-        int cScoreDetailsCount) override
-    {
-        return m_original->UploadLeaderboardScore(hSteamLeaderboard, eLeaderboardUploadScoreMethod, nScore, pScoreDetails, cScoreDetailsCount);
-    }
-
-    SteamAPICall_t AttachLeaderboardUGC(SteamLeaderboard_t hSteamLeaderboard,
-        UGCHandle_t hUGC) override
-    {
-        return m_original->AttachLeaderboardUGC(hSteamLeaderboard, hUGC);
-    }
-
-    SteamAPICall_t GetNumberOfCurrentPlayers() override
-    {
-        return m_original->GetNumberOfCurrentPlayers();
-    }
-
-    SteamAPICall_t RequestGlobalAchievementPercentages() override
-    {
-        return m_original->RequestGlobalAchievementPercentages();
-    }
-
-    int GetMostAchievedAchievementInfo(char *pchName, uint32 unNameBufLen,
-        float *pflPercent, bool *pbAchieved) override
-    {
-        return m_original->GetMostAchievedAchievementInfo(pchName, unNameBufLen, pflPercent, pbAchieved);
-    }
-
-    int GetNextMostAchievedAchievementInfo(int iIteratorPrevious,
-        char *pchName,
-        uint32 unNameBufLen,
-        float *pflPercent,
-        bool *pbAchieved) override
-    {
-        return m_original->GetNextMostAchievedAchievementInfo(iIteratorPrevious, pchName, unNameBufLen, pflPercent, pbAchieved);
-    }
-
-    bool GetAchievementAchievedPercent(const char *pchName, float *pflPercent) override
-    {
-        return m_original->GetAchievementAchievedPercent(pchName, pflPercent);
-    }
-
-    SteamAPICall_t RequestGlobalStats(int nHistoryDays) override
-    {
-        return m_original->RequestGlobalStats(nHistoryDays);
-    }
-
-    bool GetGlobalStat(const char *pchStatName, int64 *pData) override
-    {
-        return m_original->GetGlobalStat(pchStatName, pData);
-    }
-
-    bool GetGlobalStat(const char *pchStatName, double *pData) override
-    {
-        return m_original->GetGlobalStat(pchStatName, pData);
-    }
-
-    int32 GetGlobalStatHistory(const char *pchStatName, int64 *pData, uint32 cubData) override
-    {
-        return m_original->GetGlobalStatHistory(pchStatName, pData, cubData);
-    }
-
-    int32 GetGlobalStatHistory(const char *pchStatName, double *pData, uint32 cubData) override
-    {
-        return m_original->GetGlobalStatHistory(pchStatName, pData, cubData);
-    }
-
-    bool GetAchievementProgressLimits(const char *pchName, int32 *pnMinProgress, int32 *pnMaxProgress) override
-    {
-        return m_original->GetAchievementProgressLimits(pchName, pnMinProgress, pnMaxProgress);
-    }
-
-    bool GetAchievementProgressLimits(const char *pchName, float *pfMinProgress, float *pfMaxProgress) override
-    {
-        return m_original->GetAchievementProgressLimits(pchName, pfMinProgress, pfMaxProgress);
-    }
+    // Остальные функции просто проксируем (они не нужны для статистики)
+    bool SetStat(const char *pchName, int32 nData) override { return m_original->SetStat(pchName, nData); }
+    bool SetStat(const char *pchName, float fData) override { return m_original->SetStat(pchName, fData); }
+    bool UpdateAvgRateStat(const char *pchName, float flCountThisSession, double dSessionLength) override { return m_original->UpdateAvgRateStat(pchName, flCountThisSession, dSessionLength); }
+    bool GetAchievement(const char *pchName, bool *pbAchieved) override { return m_original->GetAchievement(pchName, pbAchieved); }
+    bool SetAchievement(const char *pchName) override { return m_original->SetAchievement(pchName); }
+    bool ClearAchievement(const char *pchName) override { return m_original->ClearAchievement(pchName); }
+    bool GetAchievementAndUnlockTime(const char *pchName, bool *pbAchieved, uint32 *punUnlockTime) override { return m_original->GetAchievementAndUnlockTime(pchName, pbAchieved, punUnlockTime); }
+    bool StoreStats() override { return m_original->StoreStats(); }
+    int GetAchievementIcon(const char *pchName) override { return m_original->GetAchievementIcon(pchName); }
+    const char *GetAchievementDisplayAttribute(const char *pchName, const char *pchKey) override { return m_original->GetAchievementDisplayAttribute(pchName, pchKey); }
+    bool IndicateAchievementProgress(const char *pchName, uint32 nCurProgress, uint32 nMaxProgress) override { return m_original->IndicateAchievementProgress(pchName, nCurProgress, nMaxProgress); }
+    uint32 GetNumAchievements() override { return m_original->GetNumAchievements(); }
+    const char *GetAchievementName(uint32 iAchievement) override { return m_original->GetAchievementName(iAchievement); }
+    SteamAPICall_t RequestUserStats(CSteamID steamIDUser) override { return m_original->RequestUserStats(steamIDUser); }
+    bool GetUserStat(CSteamID steamIDUser, const char *pchName, int32 *pData) override { return m_original->GetUserStat(steamIDUser, pchName, pData); }
+    bool GetUserStat(CSteamID steamIDUser, const char *pchName, float *pData) override { return m_original->GetUserStat(steamIDUser, pchName, pData); }
+    bool GetUserAchievement(CSteamID steamIDUser, const char *pchName, bool *pbAchieved) override { return m_original->GetUserAchievement(steamIDUser, pchName, pbAchieved); }
+    bool GetUserAchievementAndUnlockTime(CSteamID steamIDUser, const char *pchName, bool *pbAchieved, uint32 *punUnlockTime) override { return m_original->GetUserAchievementAndUnlockTime(steamIDUser, pchName, pbAchieved, punUnlockTime); }
+    bool ResetAllStats(bool bAchievementsToo) override { return m_original->ResetAllStats(bAchievementsToo); }
+    SteamAPICall_t FindOrCreateLeaderboard(const char *pchLeaderboardName, ELeaderboardSortMethod eLeaderboardSortMethod, ELeaderboardDisplayType eLeaderboardDisplayType) override { return m_original->FindOrCreateLeaderboard(pchLeaderboardName, eLeaderboardSortMethod, eLeaderboardDisplayType); }
+    SteamAPICall_t FindLeaderboard(const char *pchLeaderboardName) override { return m_original->FindLeaderboard(pchLeaderboardName); }
+    const char *GetLeaderboardName(SteamLeaderboard_t hSteamLeaderboard) override { return m_original->GetLeaderboardName(hSteamLeaderboard); }
+    int GetLeaderboardEntryCount(SteamLeaderboard_t hSteamLeaderboard) override { return m_original->GetLeaderboardEntryCount(hSteamLeaderboard); }
+    ELeaderboardSortMethod GetLeaderboardSortMethod(SteamLeaderboard_t hSteamLeaderboard) override { return m_original->GetLeaderboardSortMethod(hSteamLeaderboard); }
+    ELeaderboardDisplayType GetLeaderboardDisplayType(SteamLeaderboard_t hSteamLeaderboard) override { return m_original->GetLeaderboardDisplayType(hSteamLeaderboard); }
+    SteamAPICall_t DownloadLeaderboardEntries(SteamLeaderboard_t hSteamLeaderboard, ELeaderboardDataRequest eLeaderboardDataRequest, int nRangeStart, int nRangeEnd) override { return m_original->DownloadLeaderboardEntries(hSteamLeaderboard, eLeaderboardDataRequest, nRangeStart, nRangeEnd); }
+    SteamAPICall_t DownloadLeaderboardEntriesForUsers(SteamLeaderboard_t hSteamLeaderboard, CSteamID *prgUsers, int cUsers) override { return m_original->DownloadLeaderboardEntriesForUsers(hSteamLeaderboard, prgUsers, cUsers); }
+    bool GetDownloadedLeaderboardEntry(SteamLeaderboardEntries_t hSteamLeaderboardEntries, int index, LeaderboardEntry_t *pLeaderboardEntry, int32 *pDetails, int cDetailsMax) override { return m_original->GetDownloadedLeaderboardEntry(hSteamLeaderboardEntries, index, pLeaderboardEntry, pDetails, cDetailsMax); }
+    SteamAPICall_t UploadLeaderboardScore(SteamLeaderboard_t hSteamLeaderboard, ELeaderboardUploadScoreMethod eLeaderboardUploadScoreMethod, int32 nScore, const int32 *pScoreDetails, int cScoreDetailsCount) override { return m_original->UploadLeaderboardScore(hSteamLeaderboard, eLeaderboardUploadScoreMethod, nScore, pScoreDetails, cScoreDetailsCount); }
+    SteamAPICall_t AttachLeaderboardUGC(SteamLeaderboard_t hSteamLeaderboard, UGCHandle_t hUGC) override { return m_original->AttachLeaderboardUGC(hSteamLeaderboard, hUGC); }
+    SteamAPICall_t GetNumberOfCurrentPlayers() override { return m_original->GetNumberOfCurrentPlayers(); }
+    SteamAPICall_t RequestGlobalAchievementPercentages() override { return m_original->RequestGlobalAchievementPercentages(); }
+    int GetMostAchievedAchievementInfo(char *pchName, uint32 unNameBufLen, float *pflPercent, bool *pbAchieved) override { return m_original->GetMostAchievedAchievementInfo(pchName, unNameBufLen, pflPercent, pbAchieved); }
+    int GetNextMostAchievedAchievementInfo(int iIteratorPrevious, char *pchName, uint32 unNameBufLen, float *pflPercent, bool *pbAchieved) override { return m_original->GetNextMostAchievedAchievementInfo(iIteratorPrevious, pchName, unNameBufLen, pflPercent, pbAchieved); }
+    bool GetAchievementAchievedPercent(const char *pchName, float *pflPercent) override { return m_original->GetAchievementAchievedPercent(pchName, pflPercent); }
+    SteamAPICall_t RequestGlobalStats(int nHistoryDays) override { return m_original->RequestGlobalStats(nHistoryDays); }
+    bool GetGlobalStat(const char *pchStatName, int64 *pData) override { return m_original->GetGlobalStat(pchStatName, pData); }
+    bool GetGlobalStat(const char *pchStatName, double *pData) override { return m_original->GetGlobalStat(pchStatName, pData); }
+    int32 GetGlobalStatHistory(const char *pchStatName, int64 *pData, uint32 cubData) override { return m_original->GetGlobalStatHistory(pchStatName, pData, cubData); }
+    int32 GetGlobalStatHistory(const char *pchStatName, double *pData, uint32 cubData) override { return m_original->GetGlobalStatHistory(pchStatName, pData, cubData); }
+    bool GetAchievementProgressLimits(const char *pchName, int32 *pnMinProgress, int32 *pnMaxProgress) override { return m_original->GetAchievementProgressLimits(pchName, pnMinProgress, pnMaxProgress); }
+    bool GetAchievementProgressLimits(const char *pchName, float *pfMinProgress, float *pfMaxProgress) override { return m_original->GetAchievementProgressLimits(pchName, pfMinProgress, pfMaxProgress); }
 };
-
 class SteamGameServerProxy final : public ISteamGameServer
 {
 private:
