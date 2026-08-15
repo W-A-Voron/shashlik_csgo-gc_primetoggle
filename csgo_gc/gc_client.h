@@ -15,7 +15,7 @@ public:
     ~ClientGC();
     void CheckFileReloads();
 
-    uint64_t GetSteamId() const { return m_steamId; }
+     uint64_t GetSteamId() const { return m_steamId; }   // now public
 
     // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
@@ -27,23 +27,8 @@ private:
     KeyValue m_passes;              // cached passes.txt
     KeyValue m_unusualLootLists;    // cached unusual_loot_lists.txt
 
-    // --------------------------------------------
-    // НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ ДИНАМИЧЕСКИХ РАНГОВ
-    // --------------------------------------------
-    uint32_t m_competitiveRank = 1;
-    uint32_t m_competitiveWins = 0;
-    uint32_t m_wingmanRank = 1;
-    uint32_t m_wingmanWins = 0;
-    uint32_t m_dangerZoneRank = 1;
-    uint32_t m_dangerZoneWins = 0;
-
-    void LoadRankDataFromConfig();
-    void SaveRankDataToConfig();
-    void OnMatchEndRunRewardDrops(GCMessageRead &messageRead);
-
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
     bool m_isSearching{ false };
-
     // event handlers
     void HandleMessage(uint32_t type, const void *data, uint32_t size);
     void HandleNetMessage(const void *data, uint32_t size);
