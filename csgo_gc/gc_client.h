@@ -4,7 +4,6 @@
 #include "gc_shared.h"
 #include "inventory.h"
 #include "keyvalue.h"
-
 #include <steam/isteamhttp.h>
 #include <steam/steam_api_common.h>
 
@@ -17,7 +16,6 @@ public:
 
     uint64_t GetSteamId() const { return m_steamId; }
 
-    // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
     void OnOverwatchCaseStatus(GCMessageRead &messageRead);
     void OnOverwatchCaseUpdate(GCMessageRead &messageRead);
@@ -85,7 +83,6 @@ private:
     void ReloadPasses();
     void ReloadUnusualLootLists();
 
-    // Overwatch data
     std::vector<uint32_t> m_overwatchSuspects;
     size_t m_nextOverwatchIndex = 0;
     uint64_t m_nextCaseId = 1;
@@ -110,9 +107,10 @@ private:
     void SendCompetitiveCooldown();
     void UpdateCooldown();
 
-    // ===== НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ СОХРАНЕНИЯ РАНГОВ =====
+    // ===== НОВЫЕ ПЕРЕМЕННЫЕ И МЕТОДЫ =====
     bool m_matchWonThisRound{ false }; // Флаг: выиграли ли мы текущий матч
-
-    // Метод для сохранения рангов в config.txt
     void SaveRanksToConfig();
+    
+    // Новый обработчик конца матча
+    void OnMatchEnd(GCMessageRead &messageRead);
 };
