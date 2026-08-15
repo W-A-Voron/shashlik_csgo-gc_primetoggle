@@ -70,9 +70,51 @@ void ClientGC::SendCompetitiveCooldown()
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
 }
 
+void ClientGC::SendMatchmakingSearchingUpdate()
+{
+    if (!m_isSearching) {
+        SendMatchmakingUpdate();
+        return;
+    }
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+    update.set_matchmaking(1);
+
+    auto* stats = update.mutable_global_stats();
+    stats->set_players_searching(1000);
+    stats->set_servers_available(1000);
+    
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - m_matchmakingStartTime).count();
+    stats->set_search_time_avg(static_cast<uint32_t>(elapsed));
+
+    // Статистика для разных типов игр
+    auto* detail1 = stats->add_search_statistics();
+    detail1->set_game_type(6); // competitive
+    detail1->set_search_time_avg(static_cast<uint32_t>(elapsed));
+    detail1->set_players_searching(500);
+    
+    auto* detail2 = stats->add_search_statistics();
+    detail2->set_game_type(7); // wingman
+    detail2->set_search_time_avg(static_cast<uint32_t>(elapsed));
+    detail2->set_players_searching(200);
+    
+    auto* detail3 = stats->add_search_statistics();
+    detail3->set_game_type(10); // danger zone
+    detail3->set_search_time_avg(static_cast<uint32_t>(elapsed));
+    detail3->set_players_searching(300);
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+}
+
 void ClientGC::OnMatchmakingPing(GCMessageRead &messageRead)
 {
-    SendMatchmakingUpdate();
+    // Клиент периодически пингует GC для проверки статуса
+    if (m_isSearching) {
+        SendMatchmakingSearchingUpdate();
+    } else {
+        SendMatchmakingUpdate();
+    }
 }
 
 void ClientGC::SendMatchmakingUpdate()
@@ -82,12 +124,30 @@ void ClientGC::SendMatchmakingUpdate()
 
     auto* stats = update.mutable_global_stats();
     stats->set_players_searching(1000);
-    stats->set_search_time_avg(60);
+    stats->set_servers_available(1000);
+    
+    if (m_isSearching) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - m_matchmakingStartTime).count();
+        stats->set_search_time_avg(static_cast<uint32_t>(elapsed));
+    } else {
+        stats->set_search_time_avg(60);
+    }
 
-    auto* detail = stats->add_search_statistics();
-    detail->set_game_type(0);
-    detail->set_search_time_avg(60);
-    detail->set_players_searching(1000);
+    auto* detail1 = stats->add_search_statistics();
+    detail1->set_game_type(6);
+    detail1->set_search_time_avg(stats->search_time_avg());
+    detail1->set_players_searching(500);
+    
+    auto* detail2 = stats->add_search_statistics();
+    detail2->set_game_type(7);
+    detail2->set_search_time_avg(stats->search_time_avg());
+    detail2->set_players_searching(200);
+    
+    auto* detail3 = stats->add_search_statistics();
+    detail3->set_game_type(10);
+    detail3->set_search_time_avg(stats->search_time_avg());
+    detail3->set_players_searching(300);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
 }
@@ -110,7 +170,9 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
     m_isSearching = true;
     m_matchmakingStartTime = std::chrono::steady_clock::now();
     m_matchmakingReservationSent = false;
-    SendMatchmakingUpdate();
+    
+    SendMatchmakingSearchingUpdate();
+    Platform::Print("Matchmaking started\n");
 }
 
 void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
@@ -118,6 +180,7 @@ void ClientGC::OnMatchmakingStop(GCMessageRead &messageRead)
     m_isSearching = false;
     m_matchmakingReservationSent = false;
     SendMatchmakingUpdate();
+    Platform::Print("Matchmaking stopped\n");
 }
 
 void ClientGC::SendMatchmakingReservation()
@@ -129,12 +192,33 @@ void ClientGC::SendMatchmakingReservation()
     reserve.set_reservationid(++m_matchmakingReservationId);
     reserve.set_map("de_dust2");
     reserve.set_server_address("192.168.0.14:27019");
+    
     CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *sub = reserve.mutable_reservation();
+    sub->set_account_id(EffectiveAccountId());
+    sub->set_reservationid(reserve.reservationid());
+    sub->set_map(reserve.map());
+    sub->set_server_address(reserve.server_address());
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
     m_matchmakingReservationSent = true;
+    m_isSearching = false;
 
     Platform::Print("Sent matchmaking reservation to %s:%d\n", "192.168.0.14", 27019);
+}
+
+void ClientGC::CheckMatchmakingTimeout()
+{
+    if (!m_isSearching || m_matchmakingReservationSent)
+        return;
+    
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - m_matchmakingStartTime).count();
+    
+    // Если поиск идет больше 15 секунд, "находим" матч
+    if (elapsed > 15) {
+        Platform::Print("Matchmaking found match after %lld seconds\n", elapsed);
+        SendMatchmakingReservation();
+    }
 }
 
 void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
@@ -152,12 +236,10 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
 
     // Check for level up (5000 XP per level)
     int xpPerLevel = 5000;
-    bool levelUp = false;
     while (m_currentXp >= xpPerLevel)
     {
         m_currentXp -= xpPerLevel;
         m_currentLevel++;
-        levelUp = true;
         
         // Increase rank every 2 levels
         if (m_currentLevel % 2 == 0 && m_currentCompetitiveRank < RankGlobalElite)
@@ -171,13 +253,9 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
     Platform::Print("Match ended! +%d XP, Level: %d, XP: %d, Rank: %d, Wins: %d\n",
                     xpGained, m_currentLevel, m_currentXp, m_currentCompetitiveRank, m_currentCompetitiveWins);
 
-    // Save progress to file
     SaveProgressToConfig();
-
-    // Send updated rank to client
     SendRankUpdate();
 
-    // Also update matchmaking hello with new stats
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
     BuildMatchmakingHello(mmHello);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
@@ -188,7 +266,6 @@ void ClientGC::LoadProgressFromConfig()
     KeyValue progress{ "progress" };
     if (!progress.ParseFromFile("csgo_gc/progress.txt"))
     {
-        // If progress file doesn't exist, use values from main config
         m_currentXp = GetConfig().Xp();
         m_currentLevel = GetConfig().Level();
         m_currentCompetitiveRank = GetConfig().CompetitiveRank();
@@ -198,7 +275,6 @@ void ClientGC::LoadProgressFromConfig()
         m_currentDangerZoneRank = GetConfig().DangerZoneRank();
         m_currentDangerZoneWins = GetConfig().DangerZoneWins();
         
-        // Create initial progress file
         SaveProgressToConfig();
         return;
     }
@@ -583,7 +659,6 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
     message.mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
     
-    // Use current progress values
     message.set_player_level(m_currentLevel);
     message.set_player_cur_xp(m_currentXp);
 }
@@ -1341,6 +1416,13 @@ void ClientGC::CheckFileReloads()
         }
     }
 
+    static auto lastMatchmakingCheck = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastMatchmakingCheck).count() >= 5) {
+        lastMatchmakingCheck = now;
+        CheckMatchmakingTimeout();
+    }
+    
     UpdateCooldown();
 }
 
@@ -1353,7 +1435,6 @@ void ClientGC::ReloadInventory()
 void ClientGC::ReloadConfig()
 {
     GetConfig().ReloadFromFile();
-    // Reload progress from file when config is reloaded
     LoadProgressFromConfig();
     SendRankUpdate();
 }
@@ -1430,7 +1511,6 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
     Platform::Print("Overwatch: received JSON: %s\n", json.c_str());
 
     std::vector<uint32_t> suspects;
-    size_t pos = 0;
     size_t start = json.find('{');
     if (start == std::string::npos) return;
     size_t end = json.rfind('}');
