@@ -285,7 +285,7 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             break;
 
         // --- ИСПРАВЛЕННАЯ ОБРАБОТКА КОНЦА МАТЧА ---
-        case k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification:
+        case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops:
             OnMatchEnd(messageRead);
             break;
 
@@ -327,24 +327,24 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     }
 }
 
-// --- НОВАЯ ФУНКЦИЯ: ОБРАБОТКА КОНЦА МАТЧА ---
+// --- НОВАЯ ФУНКЦИЯ: ОБРАБОТКА КОНЦА МАТЧА (РАБОТАЕТ СО СТАРЫМИ ПРОТОБУФАМИ) ---
 void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
 {
-    CMsgGCCStrike15_v2_MatchEndRewardDropsNotification message;
+    CMsgGCCStrike15_v2_MatchEndRunRewardDrops message;
     if (!messageRead.ReadProtobuf(message))
     {
-        Platform::Print("Failed to parse MatchEndRewardDropsNotification\n");
+        Platform::Print("Failed to parse MatchEndRunRewardDrops\n");
         return;
     }
 
     bool wonMatch = false;
     int matchType = 0;
 
-    // Проверяем, есть ли информация о результате
-    if (message.has_match_result())
+    // Используем безопасные поля, которые есть в старых протобуфах
+    if (message.has_result())
     {
-        // 1 = победа в CS:GO
-        if (message.match_result() == 1)
+        // 1 = победа
+        if (message.result() == 1)
         {
             wonMatch = true;
         }
@@ -358,10 +358,10 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
 
     Platform::Print("Match ended. Won: %d, Type: %d\n", wonMatch, matchType);
 
-    // Если матч выигран и это Competitive или Wingman
+    // Если матч выигран и это Competitive (0) или Wingman (6)
     if (wonMatch && (matchType == 0 || matchType == 6))
     {
-        // Получаем текущие данные
+        // Получаем текущие данные из конфига
         int currentWins = GetConfig().CompetitiveWins();
         int currentRank = GetConfig().CompetitiveRank();
         int wingmanWins = GetConfig().WingmanWins();
@@ -369,14 +369,17 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
         int dzWins = GetConfig().DangerZoneWins();
         int dzRank = GetConfig().DangerZoneRank();
 
+        // Обновляем победы в зависимости от типа матча
         if (matchType == 0) // Competitive
         {
             currentWins++;
+            // Проверяем повышение ранга
             if (currentWins % WINS_PER_RANK == 0 && currentRank < 18)
             {
                 currentRank++;
                 Platform::Print("Rank UP! New Competitive Rank: %d\n", currentRank);
             }
+            // Сохраняем в файл
             UpdateConfigFile(currentRank, currentWins, wingmanRank, wingmanWins, dzRank, dzWins);
         }
         else if (matchType == 6) // Wingman
