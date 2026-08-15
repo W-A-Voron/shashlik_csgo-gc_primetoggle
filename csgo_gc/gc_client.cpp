@@ -1607,8 +1607,3 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
 
     http->SendHTTPRequest(hRequest, nullptr);
 }
-
-uint32_t ClientGC::EffectiveAccountId() const
-{
-    return AccountId();
-}
