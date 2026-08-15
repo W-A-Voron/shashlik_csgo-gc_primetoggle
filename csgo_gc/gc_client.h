@@ -27,6 +27,20 @@ private:
     KeyValue m_passes;              // cached passes.txt
     KeyValue m_unusualLootLists;    // cached unusual_loot_lists.txt
 
+    // --------------------------------------------
+    // НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ ДИНАМИЧЕСКИХ РАНГОВ
+    // --------------------------------------------
+    uint32_t m_competitiveRank = 1;
+    uint32_t m_competitiveWins = 0;
+    uint32_t m_wingmanRank = 1;
+    uint32_t m_wingmanWins = 0;
+    uint32_t m_dangerZoneRank = 1;
+    uint32_t m_dangerZoneWins = 0;
+
+    void LoadRankDataFromConfig();
+    void SaveRankDataToConfig();
+    void OnMatchEndRunRewardDrops(GCMessageRead &messageRead);
+
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
     bool m_isSearching{ false };
 
@@ -72,10 +86,6 @@ private:
     void OnMatchmakingStart(GCMessageRead &messageRead);
     void OnMatchmakingStop(GCMessageRead &messageRead);
     void SendMatchmakingUpdate();
-
-    // --- НОВЫЕ ФУНКЦИИ ДЛЯ СОХРАНЕНИЯ ПРОГРЕССА ---
-    void OnMatchEnd(GCMessageRead &messageRead);
-
     const uint64_t m_steamId;
     void ProcessGiftUse(uint64_t giftId);
     Inventory m_inventory;
@@ -106,19 +116,15 @@ private:
 
     // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
-
     void SendMatchmakingHelloUpdate();
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
     uint32_t EffectiveAccountId() const;
-
     std::chrono::steady_clock::time_point m_matchmakingStartTime;
     bool m_matchmakingReservationSent = false;
     uint64_t m_matchmakingReservationId = 0;
-
     void SendMatchmakingReservation();
     bool m_isCooldownActive{ false };
     std::chrono::steady_clock::time_point m_cooldownEndTime;
-
     void SendCompetitiveCooldown();
     void UpdateCooldown();
 };
