@@ -13,11 +13,11 @@ void GCConfig::Parse(const KeyValue& config)
     const KeyValue *ranks = config.GetSubkey("ranks");
     if (ranks)
     {
-        m_competitiveRank = static_cast<RankId>(ranks->GetNumber("competitive_rank", m_competitiveRank));
+        m_competitiveRank = ranks->GetNumber("competitive_rank", m_competitiveRank);
         m_competitiveWins = ranks->GetNumber("competitive_wins", m_competitiveWins);
-        m_wingmanRank = static_cast<RankId>(ranks->GetNumber("wingman_rank", m_wingmanRank));
+        m_wingmanRank = ranks->GetNumber("wingman_rank", m_wingmanRank);
         m_wingmanWins = ranks->GetNumber("wingman_wins", m_wingmanWins);
-        m_dangerZoneRank = static_cast<DangerZoneRankId>(ranks->GetNumber("dangerzone_rank", m_dangerZoneRank));
+        m_dangerZoneRank = ranks->GetNumber("dangerzone_rank", m_dangerZoneRank);
         m_dangerZoneWins = ranks->GetNumber("dangerzone_wins", m_dangerZoneWins);
     }
 
@@ -62,7 +62,6 @@ void GCConfig::Parse(const KeyValue& config)
 
     m_country = config.GetString("country", m_country);
     m_currency = config.GetNumber("currency", m_currency);
-    
     if (!m_hasPrime)
     {
         m_competitiveRank = RankNone;
@@ -101,6 +100,7 @@ float GCConfig::GetRarityWeight(uint32_t rarity) const
             return weight.weight;
         }
     }
+
     return 0;
 }
 

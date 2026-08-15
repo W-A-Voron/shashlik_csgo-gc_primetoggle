@@ -15,7 +15,7 @@ public:
     ~ClientGC();
     void CheckFileReloads();
 
-    uint64_t GetSteamId() const { return m_steamId; }
+     uint64_t GetSteamId() const { return m_steamId; }   // now public
 
     // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
@@ -29,11 +29,12 @@ private:
 
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
     bool m_isSearching{ false };
-
+    // event handlers
     void HandleMessage(uint32_t type, const void *data, uint32_t size);
     void HandleNetMessage(const void *data, uint32_t size);
     void HandleSOCacheRequest();
 
+    // send to the local game and the game server we're connected to (if we're connected)
     void SendMessageToGame(bool sendToGameServer, uint32_t type,
         const google::protobuf::MessageLite &message, uint64_t jobId = JobIdInvalid);
 
@@ -74,6 +75,7 @@ private:
     void ProcessGiftUse(uint64_t giftId);
     Inventory m_inventory;
 
+    // microtransactions, we only have one going at a time
     uint64_t m_transactionId{};
     std::vector<uint64_t> m_transactionItemIds;
 
@@ -84,7 +86,8 @@ private:
     void ReloadPasses();
     void ReloadUnusualLootLists();
 
-    std::vector<uint32_t> m_overwatchSuspects;
+    // Overwatch data (only one set)
+    std::vector<uint32_t> m_overwatchSuspects;   // account IDs from overwatch.json
     size_t m_nextOverwatchIndex = 0;
     uint64_t m_nextCaseId = 1;
     std::mutex m_overwatchMutex;
@@ -93,8 +96,10 @@ private:
     void SendOverwatchCaseAssignment(uint32_t suspectAccountId);
     void SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate &msg);
 
+    // Helper: parse "STEAM_0:X:YYYY" -> account ID
     static uint32_t SteamIDStringToAccountId(const std::string& str);
 
+    // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
     void SendMatchmakingHelloUpdate();
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
@@ -107,10 +112,4 @@ private:
     std::chrono::steady_clock::time_point m_cooldownEndTime;
     void SendCompetitiveCooldown();
     void UpdateCooldown();
-
-    // ============= НОВЫЕ ФУНКЦИИ ДЛЯ СОХРАНЕНИЯ РАНГОВ =============
-    void OnMatchEnd(const CMsgGCCStrike15_v2_MatchEndRunRewardDrops &message); // Обработчик конца матча
-    void UpdateRankAfterMatch();        // Логика повышения ранга
-    void SaveRankToConfig();            // Запись рангов в config.txt
-    // =================================================================
 };
