@@ -5,7 +5,7 @@
 #include <filesystem>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
-#include "steam_hook.h"   // for RecreateClientGC()
+#include "steam_hook.h"
 #include <fstream>
 
 ClientGC::ClientGC(uint64_t steamId)
@@ -17,7 +17,7 @@ ClientGC::ClientGC(uint64_t steamId)
     StartThread();
     FetchOverwatchCases();
 
-    // Загружаем ранги из конфига при старте (НОВОЕ)
+    // Загружаем ранги из конфига при старте
     LoadRankDataFromConfig();
 
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
@@ -26,13 +26,13 @@ ClientGC::ClientGC(uint64_t steamId)
 ClientGC::~ClientGC()
 {
     StopThread();
-    // Сохраняем ранги перед выходом (НОВОЕ)
+    // Сохраняем ранги перед выходом
     SaveRankDataToConfig();
     Platform::Print("ClientGC destroyed\n");
 }
 
 // ---------------------------------------------------------
-// НОВАЯ ЛОГИКА СОХРАНЕНИЯ РАНГОВ
+// НОВАЯ ЛОГИКА СОХРАНЕНИЯ РАНГОВ (ИСПРАВЛЕНА)
 // ---------------------------------------------------------
 
 void ClientGC::LoadRankDataFromConfig()
@@ -46,17 +46,22 @@ void ClientGC::LoadRankDataFromConfig()
         return;
     }
 
-    const KeyValue *ranks = config.GetSubkey("ranks");
-    if (ranks)
+    // Ищем подраздел "ranks" - используем НЕ const версию
+    KeyValue *ranks = config.GetSubkey("ranks");
+    if (!ranks)
     {
-        m_competitiveRank = ranks->GetNumber("competitive_rank", 1);
-        m_competitiveWins = ranks->GetNumber("competitive_wins", 0);
-        m_wingmanRank = ranks->GetNumber("wingman_rank", 1);
-        m_wingmanWins = ranks->GetNumber("wingman_wins", 0);
-        m_dangerZoneRank = ranks->GetNumber("dangerzone_rank", 1);
-        m_dangerZoneWins = ranks->GetNumber("dangerzone_wins", 0);
-        Platform::Print("Loaded Ranks: Comp %u (%u wins)\n", m_competitiveRank, m_competitiveWins);
+        // Если нет, добавляем пустой
+        ranks = &config.AddSubkey("ranks");
     }
+
+    m_competitiveRank = ranks->GetNumber("competitive_rank", 1);
+    m_competitiveWins = ranks->GetNumber("competitive_wins", 0);
+    m_wingmanRank = ranks->GetNumber("wingman_rank", 1);
+    m_wingmanWins = ranks->GetNumber("wingman_wins", 0);
+    m_dangerZoneRank = ranks->GetNumber("dangerzone_rank", 1);
+    m_dangerZoneWins = ranks->GetNumber("dangerzone_wins", 0);
+    
+    Platform::Print("Loaded Ranks: Comp %u (%u wins)\n", m_competitiveRank, m_competitiveWins);
 }
 
 void ClientGC::SaveRankDataToConfig()
@@ -84,7 +89,7 @@ void ClientGC::SaveRankDataToConfig()
 }
 
 // ---------------------------------------------------------
-// ОБРАБОТЧИК КОНЦА МАТЧА (ГЛАВНОЕ ДОБАВЛЕНИЕ)
+// ОБРАБОТЧИК КОНЦА МАТЧА (ИСПРАВЛЕНА ОШИБКА C2039)
 // ---------------------------------------------------------
 
 void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
@@ -96,12 +101,16 @@ void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
         return;
     }
 
-    uint32_t winner = message.winner();
-    if (winner == 0) 
+    // Правильное поле для проверки победы в CS:GO
+    // match_ending_results() — это поле, где 1 = победа, 2 = поражение
+    uint32_t result = message.match_ending_results();
+    
+    if (result == 1) 
     {
         m_competitiveWins++;
         Platform::Print("Match Won! Wins now: %u\n", m_competitiveWins);
 
+        // Логика: каждые 10 побед = +1 ранг
         const uint32_t WinsPerRank = 10;
         uint32_t targetRank = 1 + (m_competitiveWins / WinsPerRank);
         
@@ -113,6 +122,7 @@ void ClientGC::OnMatchEndRunRewardDrops(GCMessageRead &messageRead)
             Platform::Print("RANK UP! New Rank: %u\n", m_competitiveRank);
         }
 
+        // Сохраняем и отправляем обновление
         SaveRankDataToConfig();
         SendRankUpdate();
     }
