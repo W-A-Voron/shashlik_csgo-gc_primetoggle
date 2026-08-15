@@ -15,7 +15,7 @@ public:
     ~ClientGC();
     void CheckFileReloads();
 
-     uint64_t GetSteamId() const { return m_steamId; }   // now public
+    uint64_t GetSteamId() const { return m_steamId; }
 
     // Overwatch HTTP callback
     void OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback);
@@ -29,6 +29,7 @@ private:
 
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
     bool m_isSearching{ false };
+    
     // event handlers
     void HandleMessage(uint32_t type, const void *data, uint32_t size);
     void HandleNetMessage(const void *data, uint32_t size);
@@ -70,6 +71,7 @@ private:
     void OnMatchmakingPing(GCMessageRead &messageRead);
     void OnMatchmakingStart(GCMessageRead &messageRead);
     void OnMatchmakingStop(GCMessageRead &messageRead);
+    void OnMatchEnd(GCMessageRead &messageRead);
     void SendMatchmakingUpdate();
     const uint64_t m_steamId;
     void ProcessGiftUse(uint64_t giftId);
@@ -112,4 +114,17 @@ private:
     std::chrono::steady_clock::time_point m_cooldownEndTime;
     void SendCompetitiveCooldown();
     void UpdateCooldown();
+
+    // Persistent progress state
+    int m_currentXp = 0;
+    int m_currentLevel = 0;
+    RankId m_currentCompetitiveRank = RankNone;
+    int m_currentCompetitiveWins = 0;
+    RankId m_currentWingmanRank = RankNone;
+    int m_currentWingmanWins = 0;
+    DangerZoneRankId m_currentDangerZoneRank = DangerZoneRankNone;
+    int m_currentDangerZoneWins = 0;
+
+    void LoadProgressFromConfig();
+    void SaveProgressToConfig();
 };
