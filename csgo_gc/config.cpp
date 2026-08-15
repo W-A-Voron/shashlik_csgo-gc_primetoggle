@@ -4,7 +4,6 @@
 #include "random.h"
 
 constexpr const char *ConfigFilePath = "csgo_gc/config.txt";
-constexpr const char *ProgressFilePath = "csgo_gc/progress.txt";
 
 void GCConfig::Parse(const KeyValue& config)
 {
@@ -14,11 +13,11 @@ void GCConfig::Parse(const KeyValue& config)
     const KeyValue *ranks = config.GetSubkey("ranks");
     if (ranks)
     {
-        m_competitiveRank = ranks->GetNumber("competitive_rank", m_competitiveRank);
+        m_competitiveRank = static_cast<RankId>(ranks->GetNumber("competitive_rank", m_competitiveRank));
         m_competitiveWins = ranks->GetNumber("competitive_wins", m_competitiveWins);
-        m_wingmanRank = ranks->GetNumber("wingman_rank", m_wingmanRank);
+        m_wingmanRank = static_cast<RankId>(ranks->GetNumber("wingman_rank", m_wingmanRank));
         m_wingmanWins = ranks->GetNumber("wingman_wins", m_wingmanWins);
-        m_dangerZoneRank = ranks->GetNumber("dangerzone_rank", m_dangerZoneRank);
+        m_dangerZoneRank = static_cast<DangerZoneRankId>(ranks->GetNumber("dangerzone_rank", m_dangerZoneRank));
         m_dangerZoneWins = ranks->GetNumber("dangerzone_wins", m_dangerZoneWins);
     }
 
@@ -83,50 +82,14 @@ GCConfig::GCConfig()
     if (!config.ParseFromFile(ConfigFilePath))
         return;
     Parse(config);
-    
-    // Load progress from separate file if it exists
-    KeyValue progress{ "progress" };
-    if (progress.ParseFromFile(ProgressFilePath))
-    {
-        // Override rank values with saved progress
-        m_competitiveRank = progress.GetNumber("competitive_rank", m_competitiveRank);
-        m_competitiveWins = progress.GetNumber("competitive_wins", m_competitiveWins);
-        m_wingmanRank = progress.GetNumber("wingman_rank", m_wingmanRank);
-        m_wingmanWins = progress.GetNumber("wingman_wins", m_wingmanWins);
-        m_dangerZoneRank = progress.GetNumber("dangerzone_rank", m_dangerZoneRank);
-        m_dangerZoneWins = progress.GetNumber("dangerzone_wins", m_dangerZoneWins);
-        m_level = progress.GetNumber("level", m_level);
-        m_xp = progress.GetNumber("xp", m_xp);
-        
-        Platform::Print("Progress loaded from file: Level %d, XP %d, Rank %d, Wins %d\n",
-                        m_level, m_xp, m_competitiveRank, m_competitiveWins);
-    }
 }
 
 void GCConfig::ReloadFromFile()
 {
-    // Reload main config
     KeyValue config{ "config" };
     if (!config.ParseFromFile(ConfigFilePath))
         return;
     Parse(config);
-    
-    // Reload progress from separate file
-    KeyValue progress{ "progress" };
-    if (progress.ParseFromFile(ProgressFilePath))
-    {
-        m_competitiveRank = progress.GetNumber("competitive_rank", m_competitiveRank);
-        m_competitiveWins = progress.GetNumber("competitive_wins", m_competitiveWins);
-        m_wingmanRank = progress.GetNumber("wingman_rank", m_wingmanRank);
-        m_wingmanWins = progress.GetNumber("wingman_wins", m_wingmanWins);
-        m_dangerZoneRank = progress.GetNumber("dangerzone_rank", m_dangerZoneRank);
-        m_dangerZoneWins = progress.GetNumber("dangerzone_wins", m_dangerZoneWins);
-        m_level = progress.GetNumber("level", m_level);
-        m_xp = progress.GetNumber("xp", m_xp);
-        
-        Platform::Print("Progress reloaded: Level %d, XP %d, Rank %d, Wins %d\n",
-                        m_level, m_xp, m_competitiveRank, m_competitiveWins);
-    }
 }
 
 float GCConfig::GetRarityWeight(uint32_t rarity) const
@@ -138,7 +101,6 @@ float GCConfig::GetRarityWeight(uint32_t rarity) const
             return weight.weight;
         }
     }
-
     return 0;
 }
 
