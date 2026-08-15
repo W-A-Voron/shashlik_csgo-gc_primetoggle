@@ -10,7 +10,6 @@
 
 // --- НОВАЯ СИСТЕМА СОХРАНЕНИЯ ДИНАМИЧЕСКОЙ СТАТИСТИКИ ---
 
-// Функция для сохранения текущего счётчика побед и ранга обратно в config.txt
 static void SaveDynamicStatsToConfig(uint32_t compRank, uint32_t compWins, 
                                      uint32_t wingRank, uint32_t wingWins,
                                      uint32_t dzRank, uint32_t dzWins)
@@ -159,7 +158,6 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
         return;
     }
 
-    // Сброс флага перед началом нового матча
     m_hasCompletedMatch = false;
     m_isSearching = true;
     SendMatchmakingUpdate();
@@ -342,13 +340,11 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
 
     Platform::Print("MATCH END DETECTED! Processing rewards...\n");
 
-    // Если матч уже был обработан, пропускаем
     if (m_hasCompletedMatch) {
         Platform::Print("Match already processed this session, skipping.\n");
         return;
     }
 
-    // Загружаем текущие данные из конфига
     uint32_t compRank = GetConfig().CompetitiveRank();
     uint32_t compWins = GetConfig().CompetitiveWins();
     uint32_t wingRank = GetConfig().WingmanRank();
@@ -356,12 +352,10 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
     uint32_t dzRank = GetConfig().DangerZoneRank();
     uint32_t dzWins = GetConfig().DangerZoneWins();
 
-    // Простая логика: добавляем 1 победу и, если нужно, повышаем ранг (каждые 10 побед)
     compWins += 1;
     wingWins += 1;
     dzWins += 1;
 
-    // Логика повышения ранга (от 1 до 18, 10 побед на ранг)
     auto rankUp = [](uint32_t currentWins, uint32_t currentRank) -> uint32_t {
         if (currentRank >= 18) return 18;
         uint32_t newRank = 1 + (currentWins / 10);
@@ -373,10 +367,8 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
     uint32_t newWingRank = rankUp(wingWins, wingRank);
     uint32_t newDzRank = rankUp(dzWins, dzRank);
 
-    // Сохраняем изменения в файл
     SaveDynamicStatsToConfig(newCompRank, compWins, newWingRank, wingWins, newDzRank, dzWins);
 
-    // Обновляем ранги в памяти (чтобы отправить клиенту)
     CMsgGCCStrike15_v2_ClientGCRankUpdate rankUpdate;
     PlayerRankingInfo *rank = rankUpdate.add_rankings();
     rank->set_account_id(EffectiveAccountId());
@@ -398,7 +390,6 @@ void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, rankUpdate);
     
-    // Отмечаем, что матч обработан
     m_hasCompletedMatch = true;
     
     Platform::Print("STATS UPDATED: New Rank %d, Wins %d\n", newCompRank, compWins);
@@ -576,13 +567,12 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
 {
     message.set_account_id(EffectiveAccountId());
     
-    // ЗАМЕНА БЕЗУМНОЙ СТАТИСТИКИ НА РЕАЛИСТИЧНУЮ
-    message.mutable_global_stats()->set_players_online(1000);     // Было 10000
-    message.mutable_global_stats()->set_servers_online(1000);     // Было 10000
-    message.mutable_global_stats()->set_players_searching(500);   // Было 1000
-    message.mutable_global_stats()->set_servers_available(500);   // Было 1000
-    message.mutable_global_stats()->set_ongoing_matches(500);     // Было 999
-    message.mutable_global_stats()->set_search_time_avg(45);      // Было 60
+    message.mutable_global_stats()->set_players_online(1000); 
+    message.mutable_global_stats()->set_servers_online(1000); 
+    message.mutable_global_stats()->set_players_searching(500); 
+    message.mutable_global_stats()->set_servers_available(500); 
+    message.mutable_global_stats()->set_ongoing_matches(500); 
+    message.mutable_global_stats()->set_search_time_avg(45); 
 
     auto* stats = message.mutable_global_stats();
     auto* detail = stats->add_search_statistics();
@@ -1597,4 +1587,9 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
     http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
 
     http->SendHTTPRequest(hRequest, nullptr);
+}
+
+uint32_t ClientGC::EffectiveAccountId() const
+{
+    return AccountId();
 }
