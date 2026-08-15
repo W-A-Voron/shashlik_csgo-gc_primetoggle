@@ -400,14 +400,10 @@ static void BuildCSWelcome(CMsgCStrike15Welcome &message)
     message.set_last_ip_address(MakeAddress(127, 0, 0, 1));
 }
 
-// ============================================================
-// ГЛАВНАЯ ФУНКЦИЯ: ОТПРАВКА СТАТИСТИКИ (ХАРДКОД ЦИФР)
-// ============================================================
 void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
 {
     message.set_account_id(EffectiveAccountId());
     
-    // Онлайн и поиск
     message.mutable_global_stats()->set_players_online(1500);
     message.mutable_global_stats()->set_servers_online(1200);
     message.mutable_global_stats()->set_players_searching(600);
@@ -421,94 +417,12 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     detail->set_search_time_avg(42);
     detail->set_players_searching(600);
 
-    // Вак, похвалы, уровень
     message.set_vac_banned(GetConfig().VacBanned());
     message.mutable_commendation()->set_cmd_friendly(22);
     message.mutable_commendation()->set_cmd_teaching(15);
     message.mutable_commendation()->set_cmd_leader(8);
     message.set_player_level(GetConfig().Level());
     message.set_player_cur_xp(GetConfig().Xp());
-
-    // ЗАПОЛНЕНИЕ ВСЕЙ СТАТИСТИКИ ДЛЯ PANORAMA
-    // Общая статистика
-    stats->set_games_played(412);
-    stats->set_wins(286);
-    stats->set_losses(84);
-    stats->set_ties(42);
-    stats->set_total_kills(6847);
-    stats->set_total_deaths(5249);
-    stats->set_total_assists(1890);
-    stats->set_total_damage_done(845000);
-    stats->set_mvps(342);
-    stats->set_time_played(41280); // в минутах
-    
-    // Средние показатели
-    stats->set_avg_kills_per_round(0.77f);
-    stats->set_avg_deaths_per_round(0.59f);
-    stats->set_avg_assists_per_round(0.21f);
-    stats->set_kd_ratio(1.30f);
-    stats->set_hs_percentage(19.0f);
-    stats->set_rating(1.12f);
-
-    // Лучшее оружие
-    stats->set_weapon_kills_ak47(394);
-    stats->set_weapon_shots_ak47(4560);
-    stats->set_weapon_hits_ak47(2140);
-    
-    stats->set_weapon_kills_m4a4(282);
-    stats->set_weapon_shots_m4a4(4320);
-    stats->set_weapon_hits_m4a4(1980);
-    
-    stats->set_weapon_kills_awp(147);
-    stats->set_weapon_shots_awp(490);
-    stats->set_weapon_hits_awp(320);
-
-    // Гранаты
-    stats->set_hegrenade_damage_total(34200);
-    stats->set_hegrenade_kills(42);
-    stats->set_flashbang_players_flashed(390);
-
-    // Лучшие карты
-    stats->set_map_wins_mirage(94);
-    stats->set_map_losses_mirage(62);
-    stats->set_map_wins_dust2(86);
-    stats->set_map_losses_dust2(56);
-    stats->set_map_wins_inferno(72);
-    stats->set_map_losses_inferno(48);
-
-    // Дополнительно: раунды и хедшоты
-    stats->set_total_rounds_played(8920);
-    stats->set_rounds_won(5120);
-    stats->set_rounds_lost(3800);
-    stats->set_total_headshots(1300);
-
-    // Заполнение списка последних 10 матчей
-    const uint64_t now = static_cast<uint64_t>(time(nullptr));
-    auto add_match = [&](uint64_t id, int16_t r_won, int16_t r_lost, int32_t result, int32_t map_id, uint64_t timestamp, int32_t kills, int32_t deaths, int32_t assists, int32_t mvps) {
-        auto* match = stats->add_recent_matches();
-        match->set_match_id(id);
-        match->set_rounds_won(r_won);
-        match->set_rounds_lost(r_lost);
-        match->set_result(result);
-        match->set_map_id(map_id);
-        match->set_timestamp(timestamp);
-        match->set_kills(kills);
-        match->set_deaths(deaths);
-        match->set_assists(assists);
-        match->set_mvps(mvps);
-    };
-
-    // Последние матчи
-    add_match(1001, 16, 14, 1, 8, now - 3600 * 24, 28, 22, 8, 4);
-    add_match(1002, 13, 16, 0, 3, now - 3600 * 48, 18, 24, 6, 2);
-    add_match(1003, 16, 12, 1, 5, now - 3600 * 72, 22, 18, 10, 5);
-    add_match(1004, 14, 16, 0, 7, now - 3600 * 96, 15, 21, 7, 1);
-    add_match(1005, 16, 13, 1, 8, now - 3600 * 120, 30, 19, 9, 6);
-    add_match(1006, 11, 16, 0, 4, now - 3600 * 144, 12, 25, 4, 0);
-    add_match(1007, 16, 10, 1, 2, now - 3600 * 168, 25, 15, 11, 3);
-    add_match(1008, 15, 15, 2, 6, now - 3600 * 192, 20, 20, 5, 2);
-    add_match(1009, 16, 11, 1, 8, now - 3600 * 216, 24, 17, 7, 4);
-    add_match(1010, 10, 16, 0, 9, now - 3600 * 240, 14, 26, 9, 1);
 
     message.mutable_global_stats()->set_main_post_url("");
     message.mutable_global_stats()->set_required_appid_version(13857);
@@ -1243,4 +1157,9 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
     http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
 
     http->SendHTTPRequest(hRequest, nullptr);
+}
+
+uint32_t ClientGC::EffectiveAccountId() const
+{
+    return AccountId();
 }
