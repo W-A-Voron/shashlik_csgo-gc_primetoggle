@@ -27,6 +27,7 @@ private:
     KeyValue m_unusualLootLists;
 
     void HandleEvent(GCEvent type, uint64_t id, const std::vector<uint8_t> &buffer) override;
+    bool m_isSearching{ false };
     
     void HandleMessage(uint32_t type, const void *data, uint32_t size);
     void HandleNetMessage(const void *data, uint32_t size);
@@ -64,16 +65,10 @@ private:
     void BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
         const CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &matchmakingHello);
     void SendRankUpdate();
-    
-    // Объявления функций матчмейкинга
     void OnMatchmakingPing(GCMessageRead &messageRead);
     void OnMatchmakingStart(GCMessageRead &messageRead);
     void OnMatchmakingStop(GCMessageRead &messageRead);
     void SendMatchmakingUpdate();
-    void SendCompetitiveCooldown();
-    void UpdateCooldown();
-    void SendMatchmakingHelloUpdate();
-
     const uint64_t m_steamId;
     void ProcessGiftUse(uint64_t giftId);
     Inventory m_inventory;
@@ -100,15 +95,20 @@ private:
     static uint32_t SteamIDStringToAccountId(const std::string& str);
 
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
-    
+    void SendMatchmakingHelloUpdate();
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
     uint32_t EffectiveAccountId() const { return AccountId(); }
-    
     std::chrono::steady_clock::time_point m_matchmakingStartTime;
     bool m_matchmakingReservationSent = false;
     uint64_t m_matchmakingReservationId = 0;
     void SendMatchmakingReservation();
-    bool m_isSearching{ false };
     bool m_isCooldownActive{ false };
     std::chrono::steady_clock::time_point m_cooldownEndTime;
+    void SendCompetitiveCooldown();
+    void UpdateCooldown();
+
+    // --- НОВЫЕ ПОЛЯ ДЛЯ ДИНАМИЧЕСКОЙ СТАТИСТИКИ ---
+    bool m_hasCompletedMatch{ false };
+    void OnMatchEnd(GCMessageRead &messageRead);
+    // ---------------------------------------------
 };
