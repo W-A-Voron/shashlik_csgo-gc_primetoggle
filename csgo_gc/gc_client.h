@@ -57,6 +57,7 @@ private:
     void CasketItemAdd(GCMessageRead &messageRead);
     void CasketItemExtract(GCMessageRead &messageRead);
     void StatTrakSwap(GCMessageRead &messageRead);
+    void OnMatchEnd(GCMessageRead &messageRead);
 
     void DeleteItem(GCMessageRead &messageRead);
     void UnlockCrate(GCMessageRead &messageRead);
@@ -71,11 +72,7 @@ private:
     void OnMatchmakingPing(GCMessageRead &messageRead);
     void OnMatchmakingStart(GCMessageRead &messageRead);
     void OnMatchmakingStop(GCMessageRead &messageRead);
-    void OnMatchEnd(GCMessageRead &messageRead);
     void SendMatchmakingUpdate();
-    void SendMatchmakingSearchingUpdate();
-    void SendMatchmakingHelloUpdate();
-    void CheckMatchmakingTimeout();
     const uint64_t m_steamId;
     void ProcessGiftUse(uint64_t giftId);
     Inventory m_inventory;
@@ -106,6 +103,7 @@ private:
 
     // Steam HTTP callback – use CCallback, not STEAM_CALLBACK macro
     CCallback<ClientGC, HTTPRequestCompleted_t, false> m_httpCallback;
+    void SendMatchmakingHelloUpdate();
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
     uint32_t EffectiveAccountId() const;
     std::chrono::steady_clock::time_point m_matchmakingStartTime;
@@ -117,7 +115,7 @@ private:
     void SendCompetitiveCooldown();
     void UpdateCooldown();
 
-    // Persistent progress state
+    // Persistent progress for rank and XP
     int m_currentXp = 0;
     int m_currentLevel = 0;
     RankId m_currentCompetitiveRank = RankNone;
@@ -127,6 +125,7 @@ private:
     DangerZoneRankId m_currentDangerZoneRank = DangerZoneRankNone;
     int m_currentDangerZoneWins = 0;
 
-    void LoadProgressFromConfig();
-    void SaveProgressToConfig();
+    void SaveProgressToFile();
+    void LoadProgressFromFile();
+    void UpdateRankAndXP(int xpGained);
 };
