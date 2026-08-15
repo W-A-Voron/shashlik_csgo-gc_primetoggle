@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gc_const_csgo.h"
-#include "item_schema.h" // rarity constants
+#include "item_schema.h"
 
 struct RarityWeight
 {
@@ -19,21 +19,12 @@ public:
     uint32_t AppIdOverride() const { return m_appIdOverride; }
     bool ShowCsgoGCServersOnly() const { return m_showCsgoGCServersOnly; }
 
-    // Rank getters - these return values from config (initial values)
     RankId CompetitiveRank() const { return m_competitiveRank; }
     int CompetitiveWins() const { return m_competitiveWins; }
     RankId WingmanRank() const { return m_wingmanRank; }
     int WingmanWins() const { return m_wingmanWins; }
     DangerZoneRankId DangerZoneRank() const { return m_dangerZoneRank; }
     int DangerZoneWins() const { return m_dangerZoneWins; }
-
-    // Rank setters for saving progress
-    void SetCompetitiveRank(RankId rank) { m_competitiveRank = rank; }
-    void SetCompetitiveWins(int wins) { m_competitiveWins = wins; }
-    void SetWingmanRank(RankId rank) { m_wingmanRank = rank; }
-    void SetWingmanWins(int wins) { m_wingmanWins = wins; }
-    void SetDangerZoneRank(DangerZoneRankId rank) { m_dangerZoneRank = rank; }
-    void SetDangerZoneWins(int wins) { m_dangerZoneWins = wins; }
 
     bool ForceMaxRarity() const { return m_forceMaxRarity; }
     bool DestroyUsedItems() const { return m_destroyUsedItems; }
