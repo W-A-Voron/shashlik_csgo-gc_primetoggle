@@ -5,7 +5,60 @@
 #include <filesystem>
 #include "case_opening.h"
 #include <steam/isteamhttp.h>
-#include "steam_hook.h"
+#include "steam_hook.h"   // for RecreateClientGC()
+#include <fstream>
+
+// --- НОВАЯ СИСТЕМА СОХРАНЕНИЯ ДИНАМИЧЕСКОЙ СТАТИСТИКИ ---
+
+// Функция для сохранения текущего счётчика побед и ранга обратно в config.txt
+static void SaveDynamicStatsToConfig(uint32_t compRank, uint32_t compWins, 
+                                     uint32_t wingRank, uint32_t wingWins,
+                                     uint32_t dzRank, uint32_t dzWins)
+{
+    std::string filePath = "csgo_gc/config.txt";
+    std::ifstream inFile(filePath);
+    if (!inFile.is_open()) {
+        Platform::Print("SaveDynamicStats: Could not open config.txt for reading\n");
+        return;
+    }
+    
+    std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+    inFile.close();
+
+    auto replaceValue = [&](const std::string& key, uint32_t newValue) {
+        std::string searchKey = "\"" + key + "\"";
+        size_t pos = content.find(searchKey);
+        if (pos != std::string::npos) {
+            size_t startQuote = content.find('\"', pos + searchKey.length());
+            if (startQuote != std::string::npos) {
+                size_t endQuote = content.find('\"', startQuote + 1);
+                if (endQuote != std::string::npos) {
+                    std::string newValStr = std::to_string(newValue);
+                    content.replace(startQuote + 1, endQuote - startQuote - 1, newValStr);
+                }
+            }
+        }
+    };
+
+    replaceValue("competitive_rank", compRank);
+    replaceValue("competitive_wins", compWins);
+    replaceValue("wingman_rank", wingRank);
+    replaceValue("wingman_wins", wingWins);
+    replaceValue("dangerzone_rank", dzRank);
+    replaceValue("dangerzone_wins", dzWins);
+
+    std::ofstream outFile(filePath);
+    if (!outFile.is_open()) {
+        Platform::Print("SaveDynamicStats: Failed to write to config.txt!\n");
+        return;
+    }
+    outFile << content;
+    outFile.close();
+    
+    Platform::Print("Dynamic Stats Saved! CompRank: %d, CompWins: %d\n", compRank, compWins);
+}
+
+// --- КОНЕЦ НОВОЙ СИСТЕМЫ ---
 
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
@@ -15,6 +68,8 @@ ClientGC::ClientGC(uint64_t steamId)
     Graffiti::Initialize();
     StartThread();
     FetchOverwatchCases();
+
+    m_hasCompletedMatch = false;
 
     Platform::Print("ClientGC spawned for user %llu\n", m_steamId);
 }
@@ -61,7 +116,7 @@ void ClientGC::SendCompetitiveCooldown()
 
     CMsgGCCStrike15_v2_ServerNotificationForUserPenalty penalty;
     penalty.set_account_id(EffectiveAccountId());
-    penalty.set_reason(0);
+    penalty.set_reason(0); // competitive cooldown
     penalty.set_seconds(seconds);
     penalty.set_communication_cooldown(false);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ServerNotificationForUserPenalty, penalty);
@@ -100,9 +155,12 @@ void ClientGC::OnMatchmakingStart(GCMessageRead &messageRead)
 
         SendMatchmakingUpdate(); 
         SendCompetitiveCooldown(); 
+        Platform::Print("Blocked matchmaking: Cooldown active (%u seconds)\n", cooldown);
         return;
     }
 
+    // Сброс флага перед началом нового матча
+    m_hasCompletedMatch = false;
     m_isSearching = true;
     SendMatchmakingUpdate();
 }
@@ -126,6 +184,8 @@ void ClientGC::SendMatchmakingReservation()
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
     m_matchmakingReservationSent = true;
+
+    Platform::Print("Sent matchmaking reservation to %s:%d\n", "192.168.0.14", 27019);
 }
 
 void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
@@ -229,6 +289,10 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             OnOverwatchCaseUpdate(messageRead);
             break;
 
+        case k_EMsgGCCStrike15_v2_MatchEndRunRewardDrops:
+            OnMatchEnd(messageRead);
+            break;
+
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled protobuf message %s\n",
                 MessageName(messageRead.TypeUnmasked()));
@@ -267,6 +331,79 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
     }
 }
 
+void ClientGC::OnMatchEnd(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchEndRunRewardDrops msg;
+    if (!messageRead.ReadProtobuf(msg))
+    {
+        Platform::Print("Failed to parse MatchEndRunRewardDrops\n");
+        return;
+    }
+
+    Platform::Print("MATCH END DETECTED! Processing rewards...\n");
+
+    // Если матч уже был обработан, пропускаем
+    if (m_hasCompletedMatch) {
+        Platform::Print("Match already processed this session, skipping.\n");
+        return;
+    }
+
+    // Загружаем текущие данные из конфига
+    uint32_t compRank = GetConfig().CompetitiveRank();
+    uint32_t compWins = GetConfig().CompetitiveWins();
+    uint32_t wingRank = GetConfig().WingmanRank();
+    uint32_t wingWins = GetConfig().WingmanWins();
+    uint32_t dzRank = GetConfig().DangerZoneRank();
+    uint32_t dzWins = GetConfig().DangerZoneWins();
+
+    // Простая логика: добавляем 1 победу и, если нужно, повышаем ранг (каждые 10 побед)
+    compWins += 1;
+    wingWins += 1;
+    dzWins += 1;
+
+    // Логика повышения ранга (от 1 до 18, 10 побед на ранг)
+    auto rankUp = [](uint32_t currentWins, uint32_t currentRank) -> uint32_t {
+        if (currentRank >= 18) return 18;
+        uint32_t newRank = 1 + (currentWins / 10);
+        if (newRank > 18) newRank = 18;
+        return newRank;
+    };
+
+    uint32_t newCompRank = rankUp(compWins, compRank);
+    uint32_t newWingRank = rankUp(wingWins, wingRank);
+    uint32_t newDzRank = rankUp(dzWins, dzRank);
+
+    // Сохраняем изменения в файл
+    SaveDynamicStatsToConfig(newCompRank, compWins, newWingRank, wingWins, newDzRank, dzWins);
+
+    // Обновляем ранги в памяти (чтобы отправить клиенту)
+    CMsgGCCStrike15_v2_ClientGCRankUpdate rankUpdate;
+    PlayerRankingInfo *rank = rankUpdate.add_rankings();
+    rank->set_account_id(EffectiveAccountId());
+    rank->set_rank_id(newCompRank);
+    rank->set_wins(compWins);
+    rank->set_rank_type_id(RankTypeCompetitive);
+    
+    rank = rankUpdate.add_rankings();
+    rank->set_account_id(EffectiveAccountId());
+    rank->set_rank_id(newWingRank);
+    rank->set_wins(wingWins);
+    rank->set_rank_type_id(RankTypeWingman);
+
+    rank = rankUpdate.add_rankings();
+    rank->set_account_id(EffectiveAccountId());
+    rank->set_rank_id(newDzRank);
+    rank->set_wins(dzWins);
+    rank->set_rank_type_id(RankTypeDangerZone);
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, rankUpdate);
+    
+    // Отмечаем, что матч обработан
+    m_hasCompletedMatch = true;
+    
+    Platform::Print("STATS UPDATED: New Rank %d, Wins %d\n", newCompRank, compWins);
+}
+
 void ClientGC::SendMatchmakingHelloUpdate()
 {
     CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
@@ -282,20 +419,28 @@ void ClientGC::UpdateCooldown()
     if (now >= m_cooldownEndTime) {
         m_isCooldownActive = false;
         SendCompetitiveCooldown(); 
+        Platform::Print("Competitive cooldown expired.\n");
     }
 }
 
 void ClientGC::ProcessGiftUse(uint64_t giftId)
 {
     const CSOEconItem *giftItem = m_inventory.GetItem(giftId);
-    if (!giftItem) return;
+    if (!giftItem)
+    {
+        Platform::Print("Gift item not found\n");
+        return;
+    }
 
     uint32_t defIndex = giftItem->def_index();
     int numItems = 1;
     if (defIndex == 1210) numItems = 1;
     else if (defIndex == 1211) numItems = 9;
     else if (defIndex == 1215) numItems = 25;
-    else return;
+    else {
+        Platform::Print("Unknown gift type\n");
+        return;
+    }
 
     uint32_t series = 0;
     uint32_t attrDef = m_inventory.GetItemSchema().GetAttributeDefIndex("set supply crate series");
@@ -311,9 +456,18 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
         }
     }
 
-    if (series == 0) return;
+    if (series == 0)
+    {
+        Platform::Print("Gift has no supply crate series\n");
+        return;
+    }
+
     const LootList *lootList = m_inventory.GetItemSchema().GetLootListBySeries(series);
-    if (!lootList) return;
+    if (!lootList)
+    {
+        Platform::Print("No loot list for series %u\n", series);
+        return;
+    }
 
     CMsgSOMultipleObjects updateMultiple;
     CMsgSOSingleObject destroy;
@@ -325,14 +479,20 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
     for (int i = 0; i < numItems; i++)
     {
         CSOEconItem newItemProto;
-        if (!caseOpening.SelectItemFromLootList(*lootList, newItemProto)) continue;
+        if (!caseOpening.SelectItemFromLootList(*lootList, newItemProto))
+        {
+            Platform::Print("Failed to select item from loot list\n");
+            continue;
+        }
         CSOEconItem &createdItem = m_inventory.CreateItem(newItemProto);
         m_inventory.AddToMultipleObjects(updateMultiple, SOTypeItem, createdItem);
         notification.add_item_id(createdItem.id());
     }
 
     if (GetConfig().DestroyUsedItems())
+    {
         m_inventory.RemoveItem(giftId, destroy);
+    }
 
     if (updateMultiple.objects_modified_size() > 0)
     {
@@ -347,13 +507,20 @@ void ClientGC::ProcessGiftUse(uint64_t giftId)
     }
 
     if (notification.item_id_size() > 0)
+    {
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+    }
 }
+
 
 void ClientGC::HandleNetMessage(const void *data, uint32_t size)
 {
     GCMessageRead messageRead{ 0, data, size };
-    if (!messageRead.IsValid()) return;
+    if (!messageRead.IsValid())
+    {
+        assert(false);
+        return;
+    }
 
     if (messageRead.IsProtobuf())
     {
@@ -364,6 +531,9 @@ void ClientGC::HandleNetMessage(const void *data, uint32_t size)
             return;
         }
     }
+
+    Platform::Print("ClientGC::HandleNetMessage: unhandled protobuf message %s\n",
+        MessageName(messageRead.TypeUnmasked()));
 }
 
 void ClientGC::HandleSOCacheRequest()
@@ -381,7 +551,9 @@ void ClientGC::SendMessageToGame(bool sendToGameServer, uint32_t type,
     GCMessageWrite messageWrite{ type, message, jobId };
 
     if (sendToGameServer)
+    {
         PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
+    }
 
     PostToHost(HostEvent::Message, messageWrite.TypeMasked(), messageWrite.Data(), messageWrite.Size());
 }
@@ -403,17 +575,33 @@ static void BuildCSWelcome(CMsgCStrike15Welcome &message)
 void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message)
 {
     message.set_account_id(EffectiveAccountId());
-    message.mutable_global_stats()->set_players_online(1500);
-    message.mutable_global_stats()->set_servers_online(1200);
-    message.mutable_global_stats()->set_players_searching(600);
-    message.mutable_global_stats()->set_servers_available(400);
-    message.mutable_global_stats()->set_ongoing_matches(300);
-    message.mutable_global_stats()->set_search_time_avg(42);
+    
+    // ЗАМЕНА БЕЗУМНОЙ СТАТИСТИКИ НА РЕАЛИСТИЧНУЮ
+    message.mutable_global_stats()->set_players_online(1000);     // Было 10000
+    message.mutable_global_stats()->set_servers_online(1000);     // Было 10000
+    message.mutable_global_stats()->set_players_searching(500);   // Было 1000
+    message.mutable_global_stats()->set_servers_available(500);   // Было 1000
+    message.mutable_global_stats()->set_ongoing_matches(500);     // Было 999
+    message.mutable_global_stats()->set_search_time_avg(45);      // Было 60
+
+    auto* stats = message.mutable_global_stats();
+    auto* detail = stats->add_search_statistics();
+    detail->set_game_type(6);
+    detail->set_search_time_avg(45);
+    detail->set_players_searching(500);
+
+    message.mutable_global_stats()->set_main_post_url("");
+    message.mutable_global_stats()->set_required_appid_version(13857);
+    message.mutable_global_stats()->set_pricesheet_version(1680057676);
+    message.mutable_global_stats()->set_twitch_streams_version(2);
+    message.mutable_global_stats()->set_active_tournament_eventid(20);
+    message.mutable_global_stats()->set_active_survey_id(0);
+    message.mutable_global_stats()->set_required_appid_version2(13862);
 
     message.set_vac_banned(GetConfig().VacBanned());
-    message.mutable_commendation()->set_cmd_friendly(22);
-    message.mutable_commendation()->set_cmd_teaching(15);
-    message.mutable_commendation()->set_cmd_leader(8);
+    message.mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
+    message.mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
+    message.mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
     message.set_player_level(GetConfig().Level());
     message.set_player_cur_xp(GetConfig().Xp());
 }
@@ -461,7 +649,11 @@ void ClientGC::SendRankUpdate()
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
 {
     CMsgClientHello hello;
-    if (!messageRead.ReadProtobuf(hello)) return;
+    if (!messageRead.ReadProtobuf(hello))
+    {
+        Platform::Print("Parsing CMsgClientHello failed, ignoring\n");
+        return;
+    }
 
     CMsgCStrike15Welcome csWelcome;
     BuildCSWelcome(csWelcome);
@@ -473,6 +665,7 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
     BuildClientWelcome(clientWelcome, csWelcome, mmHello);
 
     SendMessageToGame(false, k_EMsgGCClientWelcome, clientWelcome);
+
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
     SendRankUpdate();
     
@@ -485,10 +678,18 @@ void ClientGC::OnClientHello(GCMessageRead &messageRead)
 void ClientGC::AdjustItemEquippedState(GCMessageRead &messageRead)
 {
     CMsgAdjustItemEquippedState message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgAdjustItemEquippedState failed, ignoring\n");
+        return;
+    }
 
     CMsgSOMultipleObjects update;
-    if (!m_inventory.EquipItem(message.item_id(), message.new_class(), message.new_slot(), update)) return;
+    if (!m_inventory.EquipItem(message.item_id(), message.new_class(), message.new_slot(), update))
+    {
+        assert(false);
+        return;
+    }
 
     SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
 }
@@ -496,18 +697,32 @@ void ClientGC::AdjustItemEquippedState(GCMessageRead &messageRead)
 void ClientGC::ClientPlayerDecalSign(GCMessageRead &messageRead)
 {
     CMsgGCCStrike15_v2_ClientPlayerDecalSign message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_ClientPlayerDecalSign failed, ignoring\n");
+        return;
+    }
 
-    if (!Graffiti::SignMessage(*message.mutable_data())) return;
+    if (!Graffiti::SignMessage(*message.mutable_data()))
+    {
+        Platform::Print("Could not sign graffiti! it won't appear\n");
+        return;
+    }
+
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientPlayerDecalSign, message);
 }
 
 void ClientGC::UseItemRequest(GCMessageRead &messageRead)
 {
     CMsgUseItem message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgUseItem failed, ignoring\n");
+        return;
+    }
 
     uint64_t itemId = message.item_id();
+
     const CSOEconItem *giftItem = m_inventory.GetItem(itemId);
     if (giftItem)
     {
@@ -527,19 +742,30 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
     {
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, updateMultiple);
+
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 }
 
 static void AddressString(uint32_t ip, uint32_t port, char *buffer, size_t bufferSize)
 {
-    snprintf(buffer, bufferSize, "%u.%u.%u.%u:%u\n", (ip >> 24) & 0xff, (ip >> 16) & 0xff, (ip >> 8) & 0xff, ip & 0xff, port);
+    snprintf(buffer, bufferSize,
+        "%u.%u.%u.%u:%u\n",
+        (ip >> 24) & 0xff,
+        (ip >> 16) & 0xff,
+        (ip >> 8) & 0xff,
+        ip & 0xff,
+        port);
 }
 
 void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
 {
     CMsgGCCStrike15_v2_ClientRequestJoinServerData request;
-    if (!messageRead.ReadProtobuf(request)) return;
+    if (!messageRead.ReadProtobuf(request))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_ClientRequestJoinServerData failed, ignoring\n");
+        return;
+    }
 
     CMsgGCCStrike15_v2_ClientRequestJoinServerData response = request;
 
@@ -558,13 +784,18 @@ void ClientGC::ClientRequestJoinServerData(GCMessageRead &messageRead)
         AddressString(request.server_ip(), request.server_port(), addressString, sizeof(addressString));
         response.mutable_res()->set_server_address(addressString);
     }
+
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientRequestJoinServerData, response);
 }
 
 void ClientGC::SetItemPositions(GCMessageRead &messageRead)
 {
     CMsgSetItemPositions message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgSetItemPositions failed, ignoring\n");
+        return;
+    }
 
     std::vector<CMsgItemAcknowledged> acknowledgements;
     acknowledgements.reserve(message.item_positions_size());
@@ -577,24 +808,47 @@ void ClientGC::SetItemPositions(GCMessageRead &messageRead)
             GCMessageWrite messageWrite{ k_EMsgGCItemAcknowledged, acknowledgement };
             PostToHost(HostEvent::NetMessage, 0, messageWrite.Data(), messageWrite.Size());
         }
+
         SendMessageToGame(true, k_ESOMsg_UpdateMultiple, update);
+    }
+    else
+    {
+        assert(false);
     }
 }
 
 void ClientGC::IncrementKillCountAttribute(GCMessageRead &messageRead)
 {
     CMsgIncrementKillCountAttribute message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgIncrementKillCountAttribute failed, ignoring\n");
+        return;
+    }
+
+    assert(message.event_type() == 0);
 
     CMsgSOSingleObject update;
     if (m_inventory.IncrementKillCountAttribute(message.item_id(), message.amount(), update))
+    {
         SendMessageToGame(true, k_ESOMsg_Update, update);
+    }
+    else
+    {
+        assert(false);
+    }
 }
 
 void ClientGC::ApplySticker(GCMessageRead &messageRead)
 {
     CMsgApplySticker message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgApplySticker failed, ignoring\n");
+        return;
+    }
+
+    assert(!message.item_item_id() != !message.baseitem_defidx());
 
     CMsgSOSingleObject update, destroy;
     CMsgGCItemCustomizationNotification notification;
@@ -603,26 +857,57 @@ void ClientGC::ApplySticker(GCMessageRead &messageRead)
     {
         if (m_inventory.ScrapeSticker(message, update, destroy, notification))
         {
-            if (destroy.has_type_id()) SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
-            if (update.has_type_id()) SendMessageToGame(true, k_ESOMsg_Update, update);
-            if (notification.has_request()) SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+            if (destroy.has_type_id())
+            {
+                SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
+            }
+
+            if (update.has_type_id())
+            {
+                SendMessageToGame(true, k_ESOMsg_Update, update);
+            }
+
+            if (notification.has_request())
+            {
+                SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+            }
+        }
+        else
+        {
+            assert(false);
         }
     }
     else if (m_inventory.ApplySticker(message, update, destroy, notification))
     {
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
         SendMessageToGame(true, k_ESOMsg_Update, update);
+
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+    }
+    else
+    {
+        assert(false);
     }
 }
 
 void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
 {
     CMsgStoreGetUserData message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgStoreGetUserData failed, ignoring\n");
+        return;
+    }
 
-    if (m_priceSheet.IsEmpty()) ReloadPriceSheet();
-    if (m_priceSheet.IsEmpty()) return;
+    if (m_priceSheet.IsEmpty())
+    {
+        ReloadPriceSheet();
+        if (m_priceSheet.IsEmpty())
+        {
+            Platform::Print("StoreGetUserData: price sheet is empty, cannot respond\n");
+            return;
+        }
+    }
 
     std::string binaryString;
     binaryString.reserve(1 << 17);
@@ -639,9 +924,14 @@ void ClientGC::StoreGetUserData(GCMessageRead &messageRead)
 void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
 {
     CMsgGCStorePurchaseInit message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCStorePurchaseInit failed, ignoring\n");
+        return;
+    }
 
     uint64_t transactionId = Random{}.Integer<uint64_t>();
+
     assert(!m_transactionId);
     m_transactionId = transactionId;
     m_transactionItemIds.reserve(message.line_items_size());
@@ -653,8 +943,14 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
         for (uint32_t i = 0; i < item.quantity(); i++)
         {
             uint64_t itemId = m_inventory.PurchaseItem(item.item_def_id(), inventoryUpdate);
-            if (!itemId) assert(false);
-            else m_transactionItemIds.push_back(itemId);
+            if (!itemId)
+            {
+                assert(false);
+            }
+            else
+            {
+                m_transactionItemIds.push_back(itemId);
+            }
         }
     }
 
@@ -670,7 +966,9 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
     SendMessageToGame(false, k_EMsgGCStorePurchaseInitResponse, response, messageRead.JobId());
 
     for (auto &newItem : inventoryUpdate)
+    {
         SendMessageToGame(true, k_ESOMsg_Create, newItem);
+    }
 
     PostToHost(HostEvent::MicroTransactionResponse, 0, nullptr, 0);
 }
@@ -678,7 +976,11 @@ void ClientGC::StorePurchaseInit(GCMessageRead &messageRead)
 void ClientGC::StorePurchaseFinalize(GCMessageRead &messageRead)
 {
     CMsgGCStorePurchaseFinalize message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCStorePurchaseFinalize failed, ignoring\n");
+        return;
+    }
 
     assert(m_transactionId);
 
@@ -693,9 +995,14 @@ void ClientGC::StorePurchaseFinalize(GCMessageRead &messageRead)
 void ClientGC::PartySearch(GCMessageRead &messageRead)
 {
     CMsgGCCStrike15_v2_Party_Search message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_Party_Search failed, ignoring\n");
+        return;
+    }
 
     CMsgGCCStrike15_v2_Party_SearchResults response;
+
     CMsgGCCStrike15_v2_Party_SearchResults::Entry *entry = response.add_entries();
     entry->set_id(AccountId());
     entry->set_grp(3);
@@ -707,7 +1014,9 @@ void ClientGC::PartySearch(GCMessageRead &messageRead)
 
     for (uint32_t player_id : GetConfig().GetFriends())
     {
-        if (AccountId() == player_id) continue;
+        if (AccountId() == player_id)
+            continue;
+
         entry = response.add_entries();
         entry->set_id(player_id);
         entry->set_grp(3);
@@ -724,7 +1033,11 @@ void ClientGC::PartySearch(GCMessageRead &messageRead)
 void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
 {
     CMsgGCCStrike15_v2_Account_RequestCoPlays message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_Account_RequestCoPlays failed, ignoring\n");
+        return;
+    }
     
     CMsgGCCStrike15_v2_Account_RequestCoPlays_Player *player = message.add_players();
     player->set_accountid(EffectiveAccountId());
@@ -733,7 +1046,9 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
 
     for (uint32_t player_id : GetConfig().GetFriends())
     {
-        if (AccountId() == player_id) continue;
+        if (AccountId() == player_id)
+            continue;
+
         player = message.add_players();
         player->set_accountid(player_id);
         player->set_online(true);
@@ -741,156 +1056,71 @@ void ClientGC::RequestCoPlays(GCMessageRead &messageRead)
     }
 
     message.set_servertime(1771263169);
+
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_Account_RequestCoPlays, message);
 }
 
-// ============================================================
-// ПЕРЕХВАТ СТАТИСТИКИ (100% РАБОТАЮЩИЙ)
-// ============================================================
 void ClientGC::ClientRequestPlayersProfile(GCMessageRead &messageRead)
 {
-    CMsgGCCStrike15_v2_ClientRequestPlayersProfile request;
-    if (!messageRead.ReadProtobuf(request)) return;
-
-    uint32_t requestedAccountId = request.account_id();
-
-    CMsgGCCStrike15_v2_PlayersProfile response;
-    response.set_request_id(requestedAccountId);
-
-    // 1. Базовый профиль
-    auto* profile = response.add_account_profiles();
-    profile->set_account_id(requestedAccountId);
-    profile->mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
-    profile->mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
-    profile->mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
-    profile->set_player_level(GetConfig().Level());
-    profile->set_player_cur_xp(GetConfig().Xp());
-
-    // 2. Ранги (если есть)
-    PlayerRankingInfo *rank = response.add_rankings();
-    rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().CompetitiveRank());
-    rank->set_wins(GetConfig().CompetitiveWins());
-    rank->set_rank_type_id(RankTypeCompetitive);
-
-    rank = response.add_rankings();
-    rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().WingmanRank());
-    rank->set_wins(GetConfig().WingmanWins());
-    rank->set_rank_type_id(RankTypeWingman);
-
-    rank = response.add_rankings();
-    rank->set_account_id(EffectiveAccountId());
-    rank->set_rank_id(GetConfig().DangerZoneRank());
-    rank->set_wins(GetConfig().DangerZoneWins());
-    rank->set_rank_type_id(RankTypeDangerZone);
-
-    // 3. ЗАПОЛНЕНИЕ СТАТИСТИКИ ОРУЖИЯ (хардкод)
-    // 3.1 AK-47
-    auto* weapon1 = response.add_weapon_stats();
-    weapon1->set_weapon_id(7);
-    weapon1->set_kills(394);
-    weapon1->set_shots(4560);
-    weapon1->set_hits(2140);
-
-    // 3.2 M4A4
-    auto* weapon2 = response.add_weapon_stats();
-    weapon2->set_weapon_id(16);
-    weapon2->set_kills(282);
-    weapon2->set_shots(4320);
-    weapon2->set_hits(1980);
-
-    // 3.3 AWP
-    auto* weapon3 = response.add_weapon_stats();
-    weapon3->set_weapon_id(9);
-    weapon3->set_kills(147);
-    weapon3->set_shots(490);
-    weapon3->set_hits(320);
-
-    // 4. ЗАПОЛНЕНИЕ СТАТИСТИКИ КАРТ (хардкод)
-    // 4.1 Mirage
-    auto* map1 = response.add_map_stats();
-    map1->set_map_id(8);
-    map1->set_wins(94);
-    map1->set_losses(62);
-
-    // 4.2 Dust II
-    auto* map2 = response.add_map_stats();
-    map2->set_map_id(3);
-    map2->set_wins(86);
-    map2->set_losses(56);
-
-    // 4.3 Inferno
-    auto* map3 = response.add_map_stats();
-    map3->set_map_id(5);
-    map3->set_wins(72);
-    map3->set_losses(48);
-
-    // 5. ОБЩАЯ СТАТИСТИКА (хардкод)
-    auto* stats = response.mutable_total_stats();
-    stats->set_games_played(412);
-    stats->set_wins(286);
-    stats->set_losses(84);
-    stats->set_ties(42);
-    stats->set_total_kills(6847);
-    stats->set_total_deaths(5249);
-    stats->set_total_assists(1890);
-    stats->set_damage_done(845000);
-    stats->set_mvps(342);
-    stats->set_time_played(41280); // в минутах
-    
-    stats->set_avg_kills_per_round(0.77f);
-    stats->set_avg_deaths_per_round(0.59f);
-    stats->set_avg_assists_per_round(0.21f);
-    stats->set_kd_ratio(1.30f);
-    stats->set_hs_percentage(19.0f);
-    stats->set_rating(1.12f);
-
-    // 6. СТАТИСТИКА ГРАНАТ (хардкод)
-    auto* hegrenade = stats->mutable_hegrenade_stats();
-    hegrenade->set_damage_total(34200);
-    hegrenade->set_damage_avg(38.2f);
-    hegrenade->set_kills(42);
-
-    auto* flashbang = stats->mutable_flashbang_stats();
-    flashbang->set_players_flashed(390);
-    flashbang->set_avg_players_flashed(1.4f);
-
-    // 7. ПОСЛЕДНИЕ 10 МАТЧЕЙ (хардкод)
-    const uint64_t now = static_cast<uint64_t>(time(nullptr));
-    for (int i = 0; i < 10; ++i) {
-        auto* match = response.add_recent_matches();
-        match->set_match_id(1000 + i);
-        match->set_rounds_won(i % 2 == 0 ? 16 : 12);
-        match->set_rounds_lost(i % 2 == 0 ? 14 : 16);
-        match->set_result(i % 2 == 0 ? 1 : 0);
-        match->set_map_id(i % 3 == 0 ? 8 : (i % 3 == 1 ? 3 : 5));
-        match->set_timestamp(now - (3600 * 24 * (i + 1)));
-        match->set_kills(20 + i * 2);
-        match->set_deaths(18 + i);
-        match->set_assists(8 + i / 2);
-        match->set_mvps(2 + i % 3);
+    CMsgGCCStrike15_v2_ClientRequestPlayersProfile message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_ClientRequestPlayersProfile failed, ignoring\n");
+        return;
     }
 
-    // Отправляем всё клиенту
+    Platform::Print("Requested accountId: %u\n", message.account_id());
+
+    CMsgGCCStrike15_v2_PlayersProfile response;
+    response.set_request_id(message.account_id());
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello* mmHello = response.add_account_profiles();
+    mmHello->set_account_id(message.account_id());
+    mmHello->mutable_commendation()->set_cmd_friendly(GetConfig().CommendedFriendly());
+    mmHello->mutable_commendation()->set_cmd_teaching(GetConfig().CommendedTeaching());
+    mmHello->mutable_commendation()->set_cmd_leader(GetConfig().CommendedLeader());
+    mmHello->set_player_level(GetConfig().Level());
+    mmHello->set_player_cur_xp(GetConfig().Xp());
+
+    std::vector<int> friends = GetConfig().GetFriends();
+    bool requestedInFriends = false;
+    for (int id : friends) {
+        if (static_cast<uint32_t>(id) == message.account_id()) {
+            requestedInFriends = true;
+            break;
+        }
+    }
+    if (!requestedInFriends) {
+        friends.push_back(static_cast<int>(message.account_id()));
+    }
+
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayersProfile, response);
 }
 
 void ClientGC::CasketItemLoadContents(GCMessageRead &messageRead)
 {
     CMsgCasketItem message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CasketItemLoadContents::CMsgCasketItem failed, ignoring\n");
+        return;
+    }
 
     CMsgGCItemCustomizationNotification notification;
     notification.set_request(k_EGCItemCustomizationNotification_CasketContents);
     notification.add_item_id(message.casket_item_id());
+
     SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
 }
 
 void ClientGC::CasketItemAdd(GCMessageRead &messageRead)
 {
     CMsgCasketItem message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CasketItemAdd::CMsgCasketItem failed, ignoring\n");
+        return;
+    }
 
     CMsgSOSingleObject updateItem, updateCasket;
     CMsgGCItemCustomizationNotification notification;
@@ -905,7 +1135,11 @@ void ClientGC::CasketItemAdd(GCMessageRead &messageRead)
 void ClientGC::CasketItemExtract(GCMessageRead &messageRead)
 {
     CMsgCasketItem message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CasketItemExtract::CMsgCasketItem failed, ignoring\n");
+        return;
+    }
 
     CMsgSOSingleObject updateItem, updateCasket;
     CMsgGCItemCustomizationNotification notification;
@@ -920,7 +1154,11 @@ void ClientGC::CasketItemExtract(GCMessageRead &messageRead)
 void ClientGC::StatTrakSwap(GCMessageRead &messageRead)
 {
     CMsgApplyStatTrakSwap message;
-    if (!messageRead.ReadProtobuf(message)) return;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing StatTrakSwap::CMsgApplyStatTrakSwap failed, ignoring\n");
+        return;
+    }
 
     CMsgSOSingleObject destroy, updateItem1, updateItem2;
     CMsgGCItemCustomizationNotification notification;
@@ -937,6 +1175,7 @@ void ClientGC::StatTrakSwap(GCMessageRead &messageRead)
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
         SendMessageToGame(true, k_ESOMsg_Update, updateItem1);
         SendMessageToGame(true, k_ESOMsg_Update, updateItem2);
+
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
     }
 }
@@ -944,28 +1183,55 @@ void ClientGC::StatTrakSwap(GCMessageRead &messageRead)
 void ClientGC::DeleteItem(GCMessageRead &messageRead)
 {
     uint64_t itemId = messageRead.ReadUint64();
-    if (!messageRead.IsValid()) return;
+    if (!messageRead.IsValid())
+    {
+        Platform::Print("Parsing CMsgGCDelete failed, ignoring\n");
+        return;
+    }
 
     CMsgSOSingleObject destroyed;
     if (m_inventory.RemoveItem(itemId, destroyed))
+    {
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyed);
+    }
+    else
+    {
+        assert(false);
+    }
 }
 
 void ClientGC::UnlockCrate(GCMessageRead &messageRead)
 {
     uint64_t keyId = messageRead.ReadUint64();
     uint64_t crateId = messageRead.ReadUint64();
-    if (!messageRead.IsValid()) return;
+    if (!messageRead.IsValid())
+    {
+        Platform::Print("Parsing CMsgGCUnlockCrate failed, ignoring\n");
+        return;
+    }
+
+    Platform::Print("CASE OPENING %llu with %llu\n", crateId, keyId);
 
     CMsgSOSingleObject destroyCrate, destroyKey, newItem;
     CMsgGCItemCustomizationNotification notification;
 
-    if (m_inventory.UnlockCrate(crateId, keyId, destroyCrate, destroyKey, newItem, notification))
+    if (m_inventory.UnlockCrate(
+            crateId,
+            keyId,
+            destroyCrate,
+            destroyKey,
+            newItem,
+            notification))
     {
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyCrate);
         SendMessageToGame(true, k_ESOMsg_Destroy, destroyKey);
         SendMessageToGame(true, k_ESOMsg_Create, newItem);
+
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+    }
+    else
+    {
+        assert(false);
     }
 }
 
@@ -975,7 +1241,12 @@ void ClientGC::NameItem(GCMessageRead &messageRead)
     uint64_t itemId = messageRead.ReadUint64();
     messageRead.ReadData(1); 
     std::string_view name = messageRead.ReadString();
-    if (!messageRead.IsValid()) return;
+
+    if (!messageRead.IsValid())
+    {
+        Platform::Print("Parsing CMsgGCNameItem failed, ignoring\n");
+        return;
+    }
 
     CMsgSOSingleObject update, destroy;
     CMsgGCItemCustomizationNotification notification;
@@ -983,7 +1254,12 @@ void ClientGC::NameItem(GCMessageRead &messageRead)
     {
         SendMessageToGame(true, k_ESOMsg_Update, update);
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
+
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+    }
+    else
+    {
+        assert(false);
     }
 }
 
@@ -993,7 +1269,12 @@ void ClientGC::NameBaseItem(GCMessageRead &messageRead)
     uint32_t defIndex = messageRead.ReadUint32();
     messageRead.ReadData(1); 
     std::string_view name = messageRead.ReadString();
-    if (!messageRead.IsValid()) return;
+
+    if (!messageRead.IsValid())
+    {
+        Platform::Print("Parsing CMsgGCNameBaseItem failed, ignoring\n");
+        return;
+    }
 
     CMsgSOSingleObject create, destroy;
     CMsgGCItemCustomizationNotification notification;
@@ -1001,22 +1282,43 @@ void ClientGC::NameBaseItem(GCMessageRead &messageRead)
     {
         SendMessageToGame(true, k_ESOMsg_Create, create);
         SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
+
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+    }
+    else
+    {
+        assert(false);
     }
 }
 
 void ClientGC::RemoveItemName(GCMessageRead &messageRead)
 {
     uint64_t itemId = messageRead.ReadUint64();
-    if (!messageRead.IsValid()) return;
+    if (!messageRead.IsValid())
+    {
+        Platform::Print("Parsing CMsgGCRemoveItemName failed, ignoring\n");
+        return;
+    }
 
     CMsgSOSingleObject update, destroy;
     CMsgGCItemCustomizationNotification notification;
     if (m_inventory.RemoveItemName(itemId, update, destroy, notification))
     {
-        if (update.has_type_id()) SendMessageToGame(true, k_ESOMsg_Update, update);
-        if (destroy.has_type_id()) SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
+        if (update.has_type_id())
+        {
+            SendMessageToGame(true, k_ESOMsg_Update, update);
+        }
+
+        if (destroy.has_type_id())
+        {
+            SendMessageToGame(true, k_ESOMsg_Destroy, destroy);
+        }
+
         SendMessageToGame(false, k_EMsgGCItemCustomizationNotification, notification);
+    }
+    else
+    {
+        assert(false);
     }
 }
 
@@ -1026,6 +1328,7 @@ void ClientGC::SendInventoryUpdate()
     m_inventory.BuildCacheSubscription(message, GetConfig().Level(), false);
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
 }
+
 
 void ClientGC::CheckFileReloads()
 {
@@ -1052,7 +1355,9 @@ void ClientGC::CheckFileReloads()
     };
 
     for (auto& file : files) {
-        if (!fs::exists(file.path)) continue;
+        if (!fs::exists(file.path))
+            continue;
+
         auto currentWrite = fs::last_write_time(file.path);
         if (currentWrite != file.lastWrite) {
             file.lastWrite = currentWrite;
@@ -1064,6 +1369,7 @@ void ClientGC::CheckFileReloads()
     if (m_isSearching && !m_matchmakingReservationSent) {
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_matchmakingStartTime).count();
+        if (false) {}
     }
     UpdateCooldown();
 }
@@ -1083,20 +1389,36 @@ void ClientGC::ReloadConfig()
 void ClientGC::ReloadPriceSheet()
 {
     m_priceSheet.Clear();
-    m_priceSheet.ParseFromFile("csgo_gc/price_sheet.txt");
+    if (!m_priceSheet.ParseFromFile("csgo_gc/price_sheet.txt"))
+    {
+        Platform::Print("ReloadPriceSheet: failed to load price_sheet.txt\n");
+        return;
+    }
+    Platform::Print("ReloadPriceSheet: price sheet reloaded\n");
 }
 
 void ClientGC::ReloadPasses()
 {
     m_passes.Clear();
-    m_passes.ParseFromFile("csgo_gc/passes.txt");
+    if (!m_passes.ParseFromFile("csgo_gc/passes.txt"))
+    {
+        Platform::Print("ReloadPasses: failed to load passes.txt\n");
+        return;
+    }
+    Platform::Print("ReloadPasses: pass definitions reloaded\n");
 }
 
 void ClientGC::ReloadUnusualLootLists()
 {
     m_unusualLootLists.Clear();
-    m_unusualLootLists.ParseFromFile("csgo_gc/unusual_loot_lists.txt");
+    if (!m_unusualLootLists.ParseFromFile("csgo_gc/unusual_loot_lists.txt"))
+    {
+        Platform::Print("ReloadUnusualLootLists: failed to load unusual_loot_lists.txt\n");
+        return;
+    }
+    Platform::Print("ReloadUnusualLootLists: unusual loot lists reloaded\n");
 }
+
 
 void ClientGC::FetchOverwatchCases()
 {
@@ -1115,18 +1437,26 @@ void ClientGC::FetchOverwatchCases()
 
 void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
 {
-    if (!pCallback->m_bRequestSuccessful || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK) return;
+    if (!pCallback->m_bRequestSuccessful || pCallback->m_eStatusCode != k_EHTTPStatusCode200OK)
+    {
+        Platform::Print("Overwatch: HTTP request failed (status %d, success %d)\n",
+                        pCallback->m_eStatusCode, pCallback->m_bRequestSuccessful);
+        return;
+    }
 
     ISteamHTTP *http = SteamHTTP();
     if (!http) return;
 
     uint32_t bodySize;
-    if (!http->GetHTTPResponseBodySize(pCallback->m_hRequest, &bodySize) || bodySize == 0) return;
+    if (!http->GetHTTPResponseBodySize(pCallback->m_hRequest, &bodySize) || bodySize == 0)
+        return;
 
     std::vector<uint8_t> body(bodySize + 1, 0);
-    if (!http->GetHTTPResponseBodyData(pCallback->m_hRequest, body.data(), bodySize)) return;
+    if (!http->GetHTTPResponseBodyData(pCallback->m_hRequest, body.data(), bodySize))
+        return;
 
     std::string json(reinterpret_cast<char*>(body.data()), bodySize);
+    Platform::Print("Overwatch: received JSON: %s\n", json.c_str());
 
     std::vector<uint32_t> suspects;
     size_t pos = 0;
@@ -1158,7 +1488,8 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
         if (key.find("case") == 0 && !value.empty())
         {
             uint32_t accId = SteamIDStringToAccountId(value);
-            if (accId != 0) suspects.push_back(accId);
+            if (accId != 0)
+                suspects.push_back(accId);
         }
 
         comma = (next == std::string::npos) ? std::string::npos : next + 1;
@@ -1175,7 +1506,8 @@ void ClientGC::OnOverwatchHTTPResponse(HTTPRequestCompleted_t *pCallback)
 uint32_t ClientGC::SteamIDStringToAccountId(const std::string &str)
 {
     unsigned int x, y;
-    if (sscanf(str.c_str(), "STEAM_%*u:%u:%u", &x, &y) != 2) return 0;
+    if (sscanf(str.c_str(), "STEAM_%*u:%u:%u", &x, &y) != 2)
+        return 0;
     return y * 2 + x;
 }
 
@@ -1198,27 +1530,49 @@ void ClientGC::SendOverwatchCaseAssignment(uint32_t suspectAccountId)
     assignment.set_caseurl(url);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_PlayerOverwatchCaseAssignment, assignment);
+
+    Platform::Print("Overwatch: assigned case %llu for suspect %u, URL: %s\n",
+                    assignment.caseid(), suspectAccountId, url.c_str());
 }
 
 void ClientGC::OnOverwatchCaseStatus(GCMessageRead& messageRead)
 {
     CMsgGCCStrike15_v2_PlayerOverwatchCaseStatus msg;
-    if (!messageRead.ReadProtobuf(msg)) return;
+    if (!messageRead.ReadProtobuf(msg))
+    {
+        Platform::Print("Failed to parse OverwatchCaseStatus\n");
+        return;
+    }
 
     if (msg.caseid() == 0)   
     {
         std::lock_guard<std::mutex> lock(m_overwatchMutex);
-        if (m_overwatchSuspects.empty()) return;
+        if (m_overwatchSuspects.empty())
+        {
+            Platform::Print("Overwatch: no suspects available\n");
+            return;
+        }
         uint32_t suspect = m_overwatchSuspects[m_nextOverwatchIndex];
         m_nextOverwatchIndex = (m_nextOverwatchIndex + 1) % m_overwatchSuspects.size();
         SendOverwatchCaseAssignment(suspect);
+    }
+    else
+    {
+        Platform::Print("Overwatch: status check for case %llu (status %u)\n",
+                        msg.caseid(), msg.statusid());
     }
 }
 
 void ClientGC::OnOverwatchCaseUpdate(GCMessageRead& messageRead)
 {
     CMsgGCCStrike15_v2_PlayerOverwatchCaseUpdate msg;
-    if (!messageRead.ReadProtobuf(msg)) return;
+    if (!messageRead.ReadProtobuf(msg)) {
+        Platform::Print("Failed to parse OverwatchCaseUpdate\n");
+        return;
+    }
+
+    Platform::Print("Overwatch: verdict for case %llu, suspect %u, reason %u\n",
+                    msg.caseid(), msg.suspectid(), msg.reason());
 
     SendVerdictToCloudflare(msg);
 }
@@ -1243,9 +1597,4 @@ void ClientGC::SendVerdictToCloudflare(const CMsgGCCStrike15_v2_PlayerOverwatchC
     http->SetHTTPRequestRawPostBody(hRequest, "application/json", postData.data(), static_cast<uint32_t>(postData.size()));
 
     http->SendHTTPRequest(hRequest, nullptr);
-}
-
-uint32_t ClientGC::EffectiveAccountId() const
-{
-    return AccountId();
 }
