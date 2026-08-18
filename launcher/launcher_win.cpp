@@ -128,6 +128,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     *slash = '\0';
 
+    // ===== НАШ ИНЖЕКТОР НАЧАЛО =====
+    // Сразу после того, как мы узнали путь к папке с игрой (baseDir),
+    // пытаемся загрузить нашу DLL.
+    wchar_t watcherPath[MAX_PATH];
+    _snwprintf_s(watcherPath, std::size(watcherPath), L"%ls\\csgo_watcher.dll", baseDir);
+    
+    HMODULE hWatcher = LoadLibraryW(watcherPath);
+    if (hWatcher) {
+        // Если DLL загрузилась успешно, она сама перехватит консоль.
+        // Ничего делать не нужно, она уже висит в памяти.
+    } else {
+        // Если DLL нет рядом — просто игнорируем (игра запустится без неё).
+    }
+    // ===== НАШ ИНЖЕКТОР КОНЕЦ =====
+
     // add bin dir to PATH
     {
         // allocate this on the heap
