@@ -13,9 +13,8 @@ class GCConfig
 {
 public:
     GCConfig();
-    void ReloadFromFile();
-
-    // ===== ГЕТТЕРЫ =====
+	void ReloadFromFile();
+    // options used by steam hook
     uint32_t AppIdOverride() const { return m_appIdOverride; }
     bool ShowCsgoGCServersOnly() const { return m_showCsgoGCServersOnly; }
 
@@ -26,13 +25,13 @@ public:
     DangerZoneRankId DangerZoneRank() const { return m_dangerZoneRank; }
     int DangerZoneWins() const { return m_dangerZoneWins; }
 
-    bool ForceMaxRarity() const { return m_forceMaxRarity; }
+	bool ForceMaxRarity() const { return m_forceMaxRarity; }
     bool DestroyUsedItems() const { return m_destroyUsedItems; }
     bool RandomizeFloat() const { return m_randomizeFloat; }
 
     bool VacBanned() const { return m_vacBanned; }
-    bool HasPrime() const { return m_hasPrime; }
-    uint32_t CompetitiveCooldownSeconds() const { return m_competitiveCooldownSeconds; }
+	bool HasPrime() const { return m_hasPrime; }
+	uint32_t CompetitiveCooldownSeconds() const { return m_competitiveCooldownSeconds; }
 
     int CommendedFriendly() const { return m_commendedFriendly; }
     int CommendedTeaching() const { return m_commendedTeaching; }
@@ -44,31 +43,13 @@ public:
     int Currency() const { return m_currency; }
 
     float GetRarityWeight(uint32_t rarity) const;
+
     std::vector<int> GetFriends() const { return m_friends; };
 
-    // ===== СЕТТЕРЫ =====
-    void SetCompetitiveRank(RankId rank) { m_competitiveRank = rank; }
-    void SetCompetitiveWins(int wins) { m_competitiveWins = wins; }
-    void SetWingmanRank(RankId rank) { m_wingmanRank = rank; }
-    void SetWingmanWins(int wins) { m_wingmanWins = wins; }
-    void SetDangerZoneRank(DangerZoneRankId rank) { m_dangerZoneRank = rank; }
-    void SetDangerZoneWins(int wins) { m_dangerZoneWins = wins; }
-
-    void SetLevel(int level) { m_level = level; }
-    void SetXp(int xp) { m_xp = xp; }
-
-    void SetCmdFriendly(int val) { m_commendedFriendly = val; }
-    void SetCmdTeaching(int val) { m_commendedTeaching = val; }
-    void SetCmdLeader(int val) { m_commendedLeader = val; }
-
-    // ===== ЕЖЕДНЕВНЫЙ БОНУС =====
-    void SetLastBonusDay(int day) { m_lastBonusDay = day; }
-    int LastBonusDay() const { return m_lastBonusDay; }
-
 private:
-    void Parse(const KeyValue& config);
-
-    // ===== ПРИВАТНЫЕ ПОЛЯ =====
+	void Parse(const KeyValue& config);
+    // actually default to 4465480 instead of 730, people are going to use old configs
+    // and then wonder why the game doesn't work and open an issue on github otherwise
     uint32_t m_appIdOverride{ 4465480 };
     bool m_showCsgoGCServersOnly{ true };
 
@@ -79,23 +60,23 @@ private:
     DangerZoneRankId m_dangerZoneRank{ DangerZoneRankNone };
     int m_dangerZoneWins{ 0 };
 
-    bool m_forceMaxRarity{ false };
+	bool m_forceMaxRarity{ false };
     bool m_destroyUsedItems{ true };
     bool m_randomizeFloat{ true };
 
     bool m_vacBanned{ false };
-    bool m_hasPrime{ true };
-    uint32_t m_competitiveCooldownSeconds{ 0 };
+	bool m_hasPrime{ true };
+	uint32_t m_competitiveCooldownSeconds{ 0 };
     int m_commendedFriendly{ 0 };
     int m_commendedTeaching{ 0 };
     int m_commendedLeader{ 0 };
     int m_level{ 0 };
     int m_xp{ 0 };
-    int m_lastBonusDay{ 0 }; // День года, когда был получен бонус
 
     std::string m_country{ "RU" };
     int m_currency{ 3 };
 
+    // default to valve weights
     std::vector<RarityWeight> m_rarityWeights{
         { ItemSchema::RarityCommon, 10000000 },
         { ItemSchema::RarityUncommon, 2000000 },

@@ -5,14 +5,11 @@
 
 constexpr const char *ConfigFilePath = "csgo_gc/config.txt";
 
-// ===== ПАРСИНГ КОНФИГА ИЗ ФАЙЛА =====
 void GCConfig::Parse(const KeyValue& config)
 {
-    // Основные настройки Steam
     m_appIdOverride = config.GetNumber("appid_override", m_appIdOverride);
     m_showCsgoGCServersOnly = config.GetNumber("show_csgo_gc_servers_only", m_showCsgoGCServersOnly);
 
-    // ===== РАНГИ И ПОБЕДЫ =====
     const KeyValue *ranks = config.GetSubkey("ranks");
     if (ranks)
     {
@@ -24,12 +21,10 @@ void GCConfig::Parse(const KeyValue& config)
         m_dangerZoneWins = ranks->GetNumber("dangerzone_wins", m_dangerZoneWins);
     }
 
-    // ===== ИГРОВЫЕ НАСТРОЙКИ =====
     m_forceMaxRarity = config.GetNumber("force_max_rarity", m_forceMaxRarity);
     m_destroyUsedItems = config.GetNumber("destroy_used_items", m_destroyUsedItems);
     m_randomizeFloat = config.GetNumber("randomize_item_float", m_randomizeFloat);
 
-    // ===== ВЕСА РЕДКОСТИ =====
     const KeyValue *rarityWeights = config.GetSubkey("rarity_weights");
     if (rarityWeights)
     {
@@ -44,7 +39,6 @@ void GCConfig::Parse(const KeyValue& config)
         }
     }
 
-    // ===== ДРУЗЬЯ =====
     const KeyValue *friends = config.GetSubkey("friends");
     if (friends)
     {
@@ -57,7 +51,6 @@ void GCConfig::Parse(const KeyValue& config)
         }
     }
 
-    // ===== ПРОФИЛЬ ИГРОКА =====
     m_vacBanned = config.GetNumber("vac_banned", m_vacBanned);
     m_hasPrime = config.GetNumber("has_prime", 1);
     m_competitiveCooldownSeconds = config.GetNumber("competitive_cooldown_seconds", m_competitiveCooldownSeconds);
@@ -67,14 +60,8 @@ void GCConfig::Parse(const KeyValue& config)
     m_level = config.GetNumber("player_level", m_level);
     m_xp = config.GetNumber("player_cur_xp", m_xp);
 
-    // ===== ДОБАВЛЕНО: ДЕНЬ ПОСЛЕДНЕГО БОНУСА =====
-    m_lastBonusDay = config.GetNumber("last_bonus_day", m_lastBonusDay);
-
-    // ===== ЛОКАЛИЗАЦИЯ =====
     m_country = config.GetString("country", m_country);
     m_currency = config.GetNumber("currency", m_currency);
-
-    // ===== ЕСЛИ НЕТ ПРАЙМА — СБРАСЫВАЕМ РАНГИ И УРОВЕНЬ =====
     if (!m_hasPrime)
     {
         m_competitiveRank = RankNone;
@@ -88,7 +75,6 @@ void GCConfig::Parse(const KeyValue& config)
     }
 }
 
-// ===== КОНСТРУКТОР (ЗАГРУЗКА ПРИ ЗАПУСКЕ) =====
 GCConfig::GCConfig()
 {
     KeyValue config{ "config" };
@@ -97,7 +83,6 @@ GCConfig::GCConfig()
     Parse(config);
 }
 
-// ===== ПЕРЕЗАГРУЗКА ИЗ ФАЙЛА (ПО КОМАНДЕ RELOAD) =====
 void GCConfig::ReloadFromFile()
 {
     KeyValue config{ "config" };
@@ -106,7 +91,6 @@ void GCConfig::ReloadFromFile()
     Parse(config);
 }
 
-// ===== ПОЛУЧЕНИЕ ВЕСА РЕДКОСТИ =====
 float GCConfig::GetRarityWeight(uint32_t rarity) const
 {
     for (const RarityWeight &weight : m_rarityWeights)
@@ -120,7 +104,6 @@ float GCConfig::GetRarityWeight(uint32_t rarity) const
     return 0;
 }
 
-// ===== СИНГЛТОН =====
 GCConfig &GetConfig()
 {
     static GCConfig config;
