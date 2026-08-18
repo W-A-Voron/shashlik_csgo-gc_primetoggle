@@ -119,33 +119,35 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 1;
     }
 
-    // rip off exe from the path
+    // Отрезаем имя exe от пути
     wchar_t *slash = wcsrchr(baseDir, '\\');
     if (!slash)
     {
-        slash = baseDir; // what the fuck
+        slash = baseDir;
     }
 
     *slash = '\0';
 
-    // ===== НАШ ИНЖЕКТОР НАЧАЛО =====
-    // Сразу после того, как мы узнали путь к папке с игрой (baseDir),
-    // пытаемся загрузить нашу DLL.
+    // ===== ПЫТАЕМСЯ ЗАГРУЗИТЬ DLL ИЗ ДВУХ ВОЗМОЖНЫХ МЕСТ =====
     wchar_t watcherPath[MAX_PATH];
+
+    // 1. Сначала пробуем загрузить из корневой папки csgo\
     _snwprintf_s(watcherPath, std::size(watcherPath), L"%ls\\csgo_watcher.dll", baseDir);
-    
     HMODULE hWatcher = LoadLibraryW(watcherPath);
-    if (hWatcher) {
-        // Если DLL загрузилась успешно, она сама перехватит консоль.
-        // Ничего делать не нужно, она уже висит в памяти.
-    } else {
-        // Если DLL нет рядом — просто игнорируем (игра запустится без неё).
+
+    // 2. Если не получилось — пробуем из папки csgo_gc\
+    if (!hWatcher)
+    {
+        _snwprintf_s(watcherPath, std::size(watcherPath), L"%ls\\csgo_gc\\csgo_watcher.dll", baseDir);
+        hWatcher = LoadLibraryW(watcherPath);
     }
-    // ===== НАШ ИНЖЕКТОР КОНЕЦ =====
+
+    // Если загрузилась — она сама перехватит консоль.
+    // Если нет — ничего страшного, игра запустится без неё.
+    // ==========================================================
 
     // add bin dir to PATH
     {
-        // allocate this on the heap
         std::wstring replacePath;
         replacePath.reserve(2048);
 
@@ -165,7 +167,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     LauncherMain_t LauncherMain = (LauncherMain_t)LoadModuleAndFindSymbol(modulePath, SYMBOL_NAME);
     if (!LauncherMain)
     {
-        // LoadModuleAndFindSymbol told us why
         return 1;
     }
 
@@ -175,7 +176,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     InstallGC_t InstallGC = (InstallGC_t)LoadModuleAndFindSymbol(modulePath, "InstallGC");
     if (!InstallGC)
     {
-        // LoadModuleAndFindSymbol told us why
         return 1;
     }
 
